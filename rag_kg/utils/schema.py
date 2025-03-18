@@ -12,7 +12,7 @@ class EntityTypes(str, Enum):
 	EVENT: str = "event"
 	BOOK: str = "book"
      
-class RelationshipTypes(str, Enum):
+class RelationTypes(str, Enum):
 	LOCATED_IN = "located_in"
 	BORN_IN = "born_in"
 	FOUNDED_IN = "founded_in"
@@ -42,16 +42,16 @@ class Entity(BaseModel):
 class Entities(BaseModel):
 	entities: List[Entity]
 
-class Relationship(BaseModel):
+class Relation(BaseModel):
 	entity1: Entity
 	entity2: Entity
-	relationship: RelationshipTypes = Field(..., title="How is entity2 related to entity1 (in at max 2 words)?")
+	relation: RelationTypes = Field(..., title="How is entity2 related to entity1 (in at max 2 words)?")
 	
 	class Config:  
 		use_enum_values = True
 
-class Relationships(BaseModel):
-	relationships: List[Relationship]
+class Relations(BaseModel):
+	relations: List[Relation]
 
 class ComplexityTypes(str, Enum):
 	SINGLE_HOP: str = "single_hop"
@@ -67,7 +67,7 @@ class SubQuery(BaseModel):
 class SubQueries(BaseModel):
 	subqueries: List[SubQuery]
 
-	def yield_subquery_idx_to_execute(self):
+	def yield_subquery_idx_to_execute(self): # TODO: Check this function
 		"""Yields subqueries in a topologically sorted manner"""
 		
 		# Build adjacency list and in-degree array
