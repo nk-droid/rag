@@ -61,19 +61,21 @@ class Queries(BaseModel):
 	queries: List[str] = Field(..., title="List of queries to be executed")
 
 class SubQuery(BaseModel):
+	index: int = Field(..., ge=0, description="Index of the query")
 	query: str = Field(..., title="Query to be executed")
 	dependencies: List[int] = Field(..., title="A list of indices of the queries that need to be executed before this query")
 
 class SubQueries(BaseModel):
 	subqueries: List[SubQuery]
 
-	def yield_subquery_idx_to_execute(self): # TODO: Check this function
-		"""Yields subqueries in a topologically sorted manner"""
+	def yield_subquery_idx_to_execute(self):
+		"""Yields subqueries in a topologically sorted manner
+		and yields all subqueries with no dependencies at once for parallel processing."""
 		
 		# Build adjacency list and in-degree array
 		adjacency = defaultdict(list)
 		in_degree = [0] * len(self.subqueries)
-
+		
 		# Fill adjacency and in_degree
 		for i, subquery in enumerate(self.subqueries):
 			for dep_idx in subquery.dependencies:
@@ -83,15 +85,24 @@ class SubQueries(BaseModel):
 		# Initialize queue with all subqueries that have zero in-degree
 		queue = deque([i for i, deg in enumerate(in_degree) if deg == 0])
 
+		# Yield all independent subqueries at once
+		initial_batch = [self.subqueries[i].model_dump() for i in queue]
+		yield initial_batch
+		
 		# Topological sort
 		while queue:
-			current = queue.popleft()
-			yield self.subqueries[current]  # yield current subquery
-
-			for neighbor in adjacency[current]:
-				in_degree[neighbor] -= 1
-				if in_degree[neighbor] == 0:
-					queue.append(neighbor)
+			batch = []
+			for _ in range(len(queue)):
+				current = queue.popleft()
+				
+				for neighbor in adjacency[current]:
+					in_degree[neighbor] -= 1
+					if in_degree[neighbor] == 0:
+						queue.append(neighbor)
+						batch.append(self.subqueries[neighbor].model_dump())
+			
+			if batch:
+				yield batch
 					     
 # TODO: Implement File schema
 class File(BaseModel):
