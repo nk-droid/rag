@@ -11,6 +11,7 @@ class EntityTypes(str, Enum):
 	DATE: str = "date"
 	EVENT: str = "event"
 	BOOK: str = "book"
+	MOVIE: str = "movie"
      
 class RelationTypes(str, Enum):
 	LOCATED_IN = "located_in"
@@ -24,10 +25,14 @@ class RelationTypes(str, Enum):
 	ORGANIZED_BY = "organized_by"
 	DATED_ON = "dated_on"
 	STUDIED_AT = "studied_at"
+	LAUNCHED_AT = "launched_at"
 	VISITED = "visited"
 	CREATED_BY = "created_by"
 	HOSTED_BY = "hosted_by"
+	WRITTEN_IN = "written_in"
 	WRITTEN_BY = "written_by"
+	DIRECTED_BY = "directed_by"
+	PRODUCED_BY = "produced_by"
 	PUBLISHED_BY = "published_by"
 	PUBLISHED_ON = "published_on"
 	KNOWN_AS = "known_as"
@@ -64,13 +69,21 @@ class SubQuery(BaseModel):
 	index: int = Field(..., ge=0, description="Index of the query")
 	query: str = Field(..., title="Query to be executed")
 	dependencies: List[int] = Field(..., title="A list of indices of the queries that need to be executed before this query")
+	entity2: Entity = Field(..., title="Entity2 in the subquery")
+	entity1_type: EntityTypes = Field(..., title="Type of entity1 in the subquery")
+	relation: RelationTypes = Field(..., title="Relation between entity1 and entity2")
+
+	class Config:  
+		use_enum_values = True
 
 class SubQueries(BaseModel):
 	subqueries: List[SubQuery]
 
-	def yield_subquery_idx_to_execute(self):
-		"""Yields subqueries in a topologically sorted manner
-		and yields all subqueries with no dependencies at once for parallel processing."""
+	def yield_subquery_to_execute(self):
+		"""
+		Yields subqueries in a topologically sorted manner and yields all subqueries with no dependencies
+		at once for parallel processing.
+		"""
 		
 		# Build adjacency list and in-degree array
 		adjacency = defaultdict(list)
@@ -103,13 +116,3 @@ class SubQueries(BaseModel):
 			
 			if batch:
 				yield batch
-					     
-# TODO: Implement File schema
-class File(BaseModel):
-    filepath: str
-
-# TODO: Implement Metadata schema 
-class Metadata(BaseModel):
-    name: str
-    description: str
-    version: str

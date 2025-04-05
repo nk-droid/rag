@@ -35,7 +35,7 @@ Please provide the output in the following format:
 def get_sequential_queries_with_dependency(query):
 	template = """
 You are a query generator system. Your task is to break the query into multiple queries
-that can be executed in sequence to get the final answer.
+that can be executed in sequence to get the final answer. Use <variable_name> to store variable names that will be used in the next query.
 
 Here is the query separated in backticks (```):
 ```
@@ -55,6 +55,31 @@ Please provide the output in the following format:
 	return chain.invoke({
 		"query":query
 	})
+
+def get_independent_subqueries(query):
+	template = """
+You are a query generator system. Your task is to analyze the given query and divide it
+into multiple independent queries. Use <variable_name> to store variable names that will
+be used in the next query.
+
+Here is the query separated in backticks (```):
+```
+{query}
+```
+
+Please provide the output in the following format:
+{format_instructions}
+"""
+
+	chain = get_chat_chain(
+		template=template,
+		parser=PydanticOutputParser(pydantic_object=SubQueries),
+		input_variables=["query"]
+	)
+
+	return chain.invoke({
+		"query":query
+	}).model_dump()["subqueries"]
 
 class EntityExtractor():
 	def __init__(self, client: str = "google", model: str = "gemini-2.0-flash"):

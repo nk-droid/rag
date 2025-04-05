@@ -1,4 +1,6 @@
 from typing import List, Union
+
+from langchain.prompts import PromptTemplate
 from langchain.output_parsers import PydanticOutputParser
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
@@ -30,21 +32,26 @@ class ClientFactory:
         except KeyError:
             raise ValueError(f"Unknown client: {client}")
 
-from langchain.prompts import PromptTemplate
-from langchain.output_parsers import PydanticOutputParser   
 def get_chat_chain(
     template: str,
-    parser: PydanticOutputParser,
     input_variables: List[str],
     client: str = "google",
     model: str = "gemini-2.0-flash",
     temperature: float = 0,
+    parser: PydanticOutputParser = None,
 ):
     client = ClientFactory.get_chat_client(client, model, temperature)
+    if not parser:
+        prompt = PromptTemplate(
+            template=template,
+            input_variables=input_variables,
+        )
+        return prompt | client
+    
     prompt = PromptTemplate(
         template=template,
         input_variables=input_variables,
         partial_variables={"format_instructions": parser.get_format_instructions()}
     )
-
+    
     return prompt | client | parser
