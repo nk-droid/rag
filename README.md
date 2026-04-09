@@ -11,7 +11,7 @@ As of now, the **main maintained path is `custom` pipeline**.
 ### `custom` pipeline flow
 
 ```mermaid
-flowchart TD
+flowchart LR
     A[directory_loader] --> B[recursive_chunker]
     B --> C1[embedding_indexer]
     B --> C2[coarse_indexer]
