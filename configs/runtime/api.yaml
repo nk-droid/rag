@@ -1,0 +1,6 @@
+runtime:
+  mode: api
+
+logging:
+  rich:
+    enabled: false

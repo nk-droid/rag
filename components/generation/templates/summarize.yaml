@@ -1,0 +1,16 @@
+template: |
+  You are given some context below and based on that context you have to answer the query given below.
+
+  Here is the context in triple backticks:
+  ```
+  {context}
+  ```
+
+  Here is the query to answer:
+  ```
+  {query}
+  ```
+
+variables:
+  context: null
+  query: null

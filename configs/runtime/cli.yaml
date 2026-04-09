@@ -1,0 +1,9 @@
+runtime:
+  mode: cli
+
+logging:
+  rich:
+    enabled: true
+    show_progress: true
+    show_spinners: true
+    show_panels: true

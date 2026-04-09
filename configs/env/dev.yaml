@@ -1,0 +1,12 @@
+app:
+  env: dev
+
+logging:
+  level: DEBUG
+
+cache:
+  enabled: false
+
+models:
+  llm:
+    temperature: 0.3

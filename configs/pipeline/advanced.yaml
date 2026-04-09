@@ -1,0 +1,14 @@
+pipeline:
+  steps:
+    - name: chunk
+      component: late_chunker
+
+    - name: retrieve
+      component: hybrid_retriever
+
+    - name: rank
+      component: reranker
+      enabled: true
+
+    - name: generate
+      component: llm_generator

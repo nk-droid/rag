@@ -1,0 +1,19 @@
+pipeline:
+  steps:
+    - name: chunk
+      component: late_chunker
+
+    - name: retrieve_dense
+      component: dense_retriever
+
+    - name: retrieve_sparse
+      component: bm25_retriever
+
+    - name: merge
+      component: hybrid_merger
+
+    - name: rank
+      component: reranker
+
+    - name: generate
+      component: llm_generator

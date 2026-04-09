@@ -1,0 +1,60 @@
+app:
+  name: modular-rag
+  version: 1.0
+
+models:
+  llm:
+    provider: ollama   # openai | anthropic | huggingface | ollama
+    model_name: llama3.2:latest
+    temperature: 0.2
+    max_tokens: 1024
+
+  embedding:
+    provider: ollama
+    model_name: qwen3-embedding:4b
+
+retrieval:
+  top_k: 20
+  hybrid:
+    candidate_multiplier: 4
+    rrf_k: 60
+    sparse_weight: 0.45
+    dense_weight: 0.55
+
+vector_store:
+  embedding_indexer:
+    path: data/indices/faiss_index
+
+  coarse_indexer:
+    path: data/indices/coarse_index.json
+
+chunking:
+  strategy: late
+  chunk_size: 512
+  chunk_overlap: 50
+
+  semantic:
+    template_name: chunk.yaml
+    parser: SemanticChunks
+    models:
+      llm:
+        provider: ollama
+        model_name: llama3.2:latest
+
+ranking:
+  enabled: true
+  top_k: 5
+  cross_encoder_model_name: cross-encoder/ms-marco-MiniLM-L-6-v2
+  embedding_model_name: qwen3-embedding:4b
+
+memory:
+  enabled: false
+
+cache:
+  enabled: true
+  type: in_memory   # in_memory | redis
+
+logging:
+  level: INFO
+  rich:
+    enabled: true

@@ -1,0 +1,7 @@
+pipeline:
+  steps:
+    - name: retrieve
+      component: hybrid_retriever
+
+    - name: generate
+      component: llm_generator

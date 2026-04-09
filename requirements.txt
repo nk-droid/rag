@@ -1,0 +1,13 @@
+PyYAML
+rich
+langchain
+langchain-text-splitters
+langchain-community
+langchain-anthropic
+langchain-ollama
+langchain-openai
+langchain-pinecone
+faiss-cpu
+pinecone
+rank_bm25
+sentence-transformers

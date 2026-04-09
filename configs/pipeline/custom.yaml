@@ -1,0 +1,42 @@
+init_pipeline:
+  steps:
+    - name: loader
+      component: directory_loader
+
+    - name: chunk
+      component: recursive_chunker
+
+    - name: index
+      component:
+        - embedding_indexer
+        - coarse_indexer
+      options:
+        embedding_indexer:
+          index_path: data/indices/faiss_index
+        coarse_indexer:
+          index_path: data/indices/coarse_index.json
+
+pipeline:
+  steps:
+    - name: retriever
+      component: hybrid_retriever
+      dense_retriever: fine_retriever
+      sparse_retriever: coarse_retriever
+
+    - name: rank fusion
+      component: rank_fusion
+
+    - name: rerank
+      component: embedding_ranker
+
+    - name: prompt builder
+      component: prompt_builder
+      template_name: summarize.yaml
+      parser: Answer
+
+    - name: generate
+      component: llm_generator
+
+    - name: parser
+      component: output_parser
+      parser: Answer

@@ -1,0 +1,9 @@
+runtime:
+  mode: notebook
+
+logging:
+  rich:
+    enabled: false
+
+streaming:
+  enabled: true
