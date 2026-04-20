@@ -1,0 +1,11 @@
+template: |
+  Generate {max_queries} diverse retrieval query variants for the same intent.
+  Keep each query short and precise.
+  Avoid duplicates.
+
+  User query:
+  {query}
+
+variables:
+  query: null
+  max_queries: null

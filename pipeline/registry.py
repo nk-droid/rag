@@ -9,7 +9,7 @@ from components.ingestion import DirectoryLoader, DocumentLoader, MarkdownLoader
 from components.indexer import EmbeddingIndexer, CoarseIndexer
 from components.memory import MemoryFilter, MemoryStore, MemoryWriter
 from components.postprocessing import AnswerCleaner, Refiner, SelfCritic
-from components.query import MultiQueryGenerator, QueryCleaner, QueryRewriter, RetrievalDecider
+from components.query import MultiQueryGenerator, QueryCleaner, QueryRewriter
 from components.ranking import (
     BaseRanker,
     ColBERTRanker,
@@ -684,16 +684,6 @@ def _multi_query_with(
     payload["config"] = config
     return payload
 
-def _decide_retrieval_with(
-    decider: RetrievalDecider,
-    state: dict[str, Any],
-    config: dict[str, Any],
-) -> dict[str, Any]:
-    payload = _ensure_state(state)
-    payload["retrieval_plan"] = decider.decide(payload.get("query", ""))
-    payload["config"] = config
-    return payload
-
 def _stream_generate_with(
     generator: StreamingGenerator,
     state: dict[str, Any],
@@ -795,9 +785,21 @@ COMPONENT_FACTORIES: dict[str, ComponentFactory] = {
         index_path=_get_index_path(config, "coarse_indexer")
     ),
     "query_cleaner": lambda config: QueryCleaner(),
-    "query_rewriter": lambda config: QueryRewriter(),
-    "multi_query_generator": lambda config: MultiQueryGenerator(),
-    "retrieval_decider": lambda config: RetrievalDecider(),
+    "query_rewriter": lambda config: QueryRewriter(
+        generator=Generator(get_llm(config)),
+        prompt_builder=PromptBuilder(use_cache=_cache_enabled(config, "prompt")),
+        parser=OutputParser(),
+    ),
+    "multi_query_generator": lambda config: MultiQueryGenerator(
+        generator=Generator(get_llm(config)),
+        prompt_builder=PromptBuilder(use_cache=_cache_enabled(config, "prompt")),
+        parser=OutputParser(),
+        max_queries=int(
+            config.get("retrieval", {})
+            .get("query_expansion", {})
+            .get("max_queries", 3)
+        ),
+    ),
     "coarse_retriever": lambda config: CoarseRetriever(
         index_path=_get_index_path(config, "coarse_indexer")
     ),
@@ -874,9 +876,6 @@ REGISTRY: dict[str, ComponentCallable] = {
     "query_rewriter": lambda state, config: _rewrite_query_with(_build_component("query_rewriter", config), state, config),
     "multi_query_generator": lambda state, config: _multi_query_with(
         _build_component("multi_query_generator", config), state, config
-    ),
-    "retrieval_decider": lambda state, config: _decide_retrieval_with(
-        _build_component("retrieval_decider", config), state, config
     ),
     "coarse_retriever": lambda state, config: _retrieve_with(_build_component("coarse_retriever", config), state, config),
     "fine_retriever": lambda state, config: _retrieve_with(_build_component("fine_retriever", config), state, config),

@@ -1,0 +1,11 @@
+template: |
+  Rewrite the user query for retrieval.
+  Keep intent unchanged.
+  Make it specific and keyword-rich.
+  Return one rewritten query only.
+
+  User query:
+  {query}
+
+variables:
+  query: null
