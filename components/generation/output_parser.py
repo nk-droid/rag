@@ -13,9 +13,17 @@ class SemanticChunks(BaseModel):
         description="Ordered list of semantic chunks as plain text strings only (no topic keys, no nested objects).",
     )
 
+class RewrittenQuery(BaseModel):
+    query: str = Field(..., description="Single rewritten retrieval-ready query.")
+
+class QueryVariants(BaseModel):
+    queries: List[str] = Field(..., description="List of rewritten search query variants.")
+
 pydantic_models = {
     "Answer": Answer,
-    "SemanticChunks": SemanticChunks
+    "SemanticChunks": SemanticChunks,
+    "RewrittenQuery": RewrittenQuery,
+    "QueryVariants": QueryVariants
 }
     
 class OutputParser:
