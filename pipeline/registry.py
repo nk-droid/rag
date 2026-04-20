@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any, Callable
 
 from components.chunking import LateChunker, RecursiveChunker, SemanticChunker
@@ -26,6 +27,10 @@ from components.retrieval import (
     MemoryRetriever,
 )
 from components.shared_types import MemoryRecord, RetrievedChunk
+from infra.cache.base_cache import BaseCache
+from infra.cache.cache_keys import file_signature, make_cache_key, stable_hash, text_hash
+from infra.cache.in_memory_cache import InMemoryCache
+from infra.cache.redis_cache import RedisCache
 from infra.storage.vector_store_factory import get_vector_store
 from infra.llm.llm_factory import get_llm
 
@@ -36,17 +41,236 @@ def _ensure_state(state: dict[str, Any] | None) -> dict[str, Any]:
     return state if isinstance(state, dict) else {}
 
 _COMPONENT_CACHE: dict[tuple[str, str], Any] = {}
+_CACHE_CLIENTS: dict[str, BaseCache] = {}
 
 def _config_cache_key(config: dict[str, Any]) -> str:
     vector_store = config.get("vector_store", {})
     models = config.get("models", {})
-    embedding = models.get("embedding", {})
+    retrieval = config.get("retrieval", {})
+    ranking = config.get("ranking", {})
+    chunking = config.get("chunking", {})
     return repr(
         {
             "vector_store": vector_store,
-            "embedding": embedding,
+            "models": models,
+            "retrieval": retrieval,
+            "ranking": ranking,
+            "chunking": chunking,
         }
     )
+
+def _cache_config(config: dict[str, Any]) -> dict[str, Any]:
+    cache_cfg = config.get("cache", {})
+    return cache_cfg if isinstance(cache_cfg, dict) else {}
+
+def _cache_enabled(config: dict[str, Any], feature: str) -> bool:
+    cache_cfg = _cache_config(config)
+    if not bool(cache_cfg.get("enabled", False)):
+        return False
+
+    features = cache_cfg.get("features", {})
+    if isinstance(features, dict) and feature in features:
+        return bool(features.get(feature))
+    return True
+
+def _cache_ttl(
+    config: dict[str, Any],
+    feature: str,
+    fallback: int | None = None,
+) -> int | None:
+    cache_cfg = _cache_config(config)
+    per_feature = cache_cfg.get("ttl_sec", {})
+    if isinstance(per_feature, dict) and feature in per_feature:
+        value = per_feature.get(feature)
+        if value is None:
+            return None
+        return int(value)
+
+    default_ttl = cache_cfg.get("default_ttl_sec", fallback)
+    if default_ttl is None:
+        return None
+    return int(default_ttl)
+
+def _cache_env(config: dict[str, Any]) -> str:
+    app_cfg = config.get("app", {})
+    if isinstance(app_cfg, dict):
+        return str(app_cfg.get("env", "default"))
+    return "default"
+
+def _cache_key(config: dict[str, Any], feature: str, payload: dict[str, Any]) -> str:
+    cache_cfg = _cache_config(config)
+    return make_cache_key(
+        namespace=str(cache_cfg.get("namespace", "rag")),
+        version=str(cache_cfg.get("version", "v1")),
+        env=_cache_env(config),
+        feature=feature,
+        payload=payload,
+    )
+
+def _get_cache(config: dict[str, Any]) -> BaseCache | None:
+    if not _cache_enabled(config, feature="base"):
+        return None
+
+    cache_cfg = _cache_config(config)
+    cache_type = str(cache_cfg.get("type", "in_memory")).strip().lower()
+    cache_signature = stable_hash(
+        {
+            "type": cache_type,
+            "config": cache_cfg,
+            "env": _cache_env(config),
+        }
+    )
+
+    if cache_signature in _CACHE_CLIENTS:
+        return _CACHE_CLIENTS[cache_signature]
+
+    default_ttl = _cache_ttl(config, feature="default", fallback=900)
+    if cache_type == "in_memory":
+        cache_client: BaseCache = InMemoryCache(
+            max_entries=int(cache_cfg.get("max_entries", 2000)),
+            default_ttl_sec=default_ttl,
+        )
+    elif cache_type == "redis":
+        namespace = str(cache_cfg.get("namespace", "rag"))
+        version = str(cache_cfg.get("version", "v1"))
+        env = _cache_env(config)
+        key_prefix = str(cache_cfg.get("key_prefix", f"{namespace}:{version}:{env}:"))
+        index_key = str(cache_cfg.get("index_key", "__cache_index__"))
+        redis_url = str(cache_cfg.get("redis_url", "redis://localhost:6379/0"))
+        cache_client = RedisCache(
+            redis_url=redis_url,
+            default_ttl_sec=default_ttl,
+            key_prefix=key_prefix,
+            index_key=index_key,
+        )
+    else:
+        raise ValueError(f"Unsupported cache type: {cache_type}")
+
+    _CACHE_CLIENTS[cache_signature] = cache_client
+    return cache_client
+
+def _mark_cache_hit(payload: dict[str, Any], feature: str, hit: bool) -> None:
+    cache_hit = payload.get("cache_hit")
+    if not isinstance(cache_hit, dict):
+        cache_hit = {}
+    cache_hit[feature] = hit
+    payload["cache_hit"] = cache_hit
+
+def _serialize_chunks(chunks: list[RetrievedChunk] | list[Any]) -> list[dict[str, Any]]:
+    serialized: list[dict[str, Any]] = []
+    for idx, chunk in enumerate(chunks):
+        if isinstance(chunk, RetrievedChunk):
+            chunk_id = chunk.id
+            text = chunk.text
+            score = chunk.score
+            metadata = chunk.metadata
+        elif isinstance(chunk, dict):
+            chunk_id = chunk.get("id", f"chunk-{idx}")
+            text = chunk.get("text") or chunk.get("content") or ""
+            score = chunk.get("score", 0.0)
+            metadata = chunk.get("metadata", {})
+        else:
+            chunk_id = getattr(chunk, "id", f"chunk-{idx}")
+            text = getattr(chunk, "text", "")
+            score = getattr(chunk, "score", 0.0)
+            metadata = getattr(chunk, "metadata", {})
+
+        serialized.append(
+            {
+                "id": str(chunk_id),
+                "text": str(text),
+                "score": float(score) if score is not None else 0.0,
+                "metadata": dict(metadata) if isinstance(metadata, dict) else {},
+            }
+        )
+    return serialized
+
+def _deserialize_chunks(payload: list[dict[str, Any]] | Any) -> list[RetrievedChunk]:
+    if not isinstance(payload, list):
+        return []
+
+    chunks: list[RetrievedChunk] = []
+    for idx, item in enumerate(payload):
+        if not isinstance(item, dict):
+            continue
+
+        score = item.get("score", 0.0)
+        try:
+            normalized_score = float(score)
+        except (TypeError, ValueError):
+            normalized_score = 0.0
+
+        chunks.append(
+            RetrievedChunk(
+                id=str(item.get("id", f"chunk-{idx}")),
+                text=str(item.get("text", "")),
+                score=normalized_score,
+                metadata=dict(item.get("metadata", {}))
+                if isinstance(item.get("metadata"), dict)
+                else {},
+            )
+        )
+
+    return chunks
+
+def _answer_text(answer: Any) -> str:
+    if answer is None:
+        return ""
+
+    if isinstance(answer, str):
+        return answer
+
+    content = getattr(answer, "content", None)
+    if content is None:
+        return str(answer)
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        pieces: list[str] = []
+        for part in content:
+            if isinstance(part, dict):
+                text = part.get("text")
+                if text is not None:
+                    pieces.append(str(text))
+            else:
+                pieces.append(str(part))
+        return "\n".join(piece for piece in pieces if piece)
+
+    return str(content)
+
+def _index_fingerprint(config: dict[str, Any]) -> str:
+    embedding_index_path = Path(_get_index_path(config, "embedding_indexer"))
+    coarse_index_path = Path(_get_index_path(config, "coarse_indexer"))
+
+    if embedding_index_path.is_dir():
+        embedding_artifacts = [
+            file_signature(embedding_index_path / "index.faiss"),
+            file_signature(embedding_index_path / "index.pkl"),
+        ]
+    else:
+        embedding_artifacts = [file_signature(embedding_index_path)]
+
+    payload = {
+        "embedding_artifacts": embedding_artifacts,
+        "coarse_artifact": file_signature(coarse_index_path),
+        "embedding_model": config.get("models", {}).get("embedding", {}),
+        "vector_store": config.get("vector_store", {}),
+    }
+    return stable_hash(payload)
+
+def _generation_cacheable(config: dict[str, Any]) -> bool:
+    llm_cfg = config.get("models", {}).get("llm", {})
+    raw_temperature = llm_cfg.get("temperature", 0)
+    try:
+        temperature = float(raw_temperature)
+    except (TypeError, ValueError):
+        temperature = 0.0
+
+    if temperature == 0.0:
+        return True
+    return bool(_cache_config(config).get("allow_nondeterministic_generation", False))
 
 def _get_index_path(config: dict[str, Any], indexer_key: str) -> str:
     vector_store = config.get("vector_store", {})
@@ -221,11 +445,41 @@ def _index_with(indexer: Any, state: dict[str, Any], config: dict[str, Any]) -> 
 def _retrieve_with(retriever: Any, state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     payload = _ensure_state(state)
     query = payload.get("query", "")
-    top_k = int(payload.get("top_k", 5))
+    top_k = int(payload.get("top_k", config.get("retrieval", {}).get("top_k", 5)))
+    step_cfg = payload.get("_step", {}) if isinstance(payload.get("_step"), dict) else {}
+
+    cache = _get_cache(config)
+    cache_key = None
+    if cache is not None and _cache_enabled(config, "retrieval"):
+        key_payload = {
+            "retriever": retriever.__class__.__name__,
+            "query": str(query).strip(),
+            "top_k": top_k,
+            "step": step_cfg,
+            "index_fingerprint": _index_fingerprint(config),
+        }
+        cache_key = _cache_key(config, "retrieval", key_payload)
+        cached = cache.get(cache_key)
+        if isinstance(cached, dict):
+            payload["retrieved"] = _deserialize_chunks(cached.get("retrieved", []))
+            payload["retriever"] = retriever.__class__.__name__
+            payload["config"] = config
+            _mark_cache_hit(payload, "retrieval", True)
+            return payload
+
     results = retriever.retrieve(query, top_k=top_k)
     payload["retrieved"] = results
     payload["retriever"] = retriever.__class__.__name__
     payload["config"] = config
+    _mark_cache_hit(payload, "retrieval", False)
+
+    if cache is not None and cache_key is not None:
+        cache.set(
+            cache_key,
+            {"retrieved": _serialize_chunks(results)},
+            ttl_sec=_cache_ttl(config, "retrieval", fallback=900),
+        )
+
     return payload
 
 def _hybrid_retrieve_with(
@@ -240,14 +494,39 @@ def _hybrid_retrieve_with(
     query = payload.get("query", "")
     top_k = int(step_cfg.get("top_k", payload.get("top_k", retrieval_cfg.get("top_k", 5))))
 
+    cache = _get_cache(config)
+    cache_key = None
+    if cache is not None and _cache_enabled(config, "retrieval"):
+        key_payload = {
+            "retriever": retriever.__class__.__name__,
+            "query": str(query).strip(),
+            "top_k": top_k,
+            "candidate_multiplier": int(getattr(retriever, "candidate_multiplier", 1)),
+            "fuse": bool(step_cfg.get("fuse", False)),
+            "step": step_cfg,
+            "index_fingerprint": _index_fingerprint(config),
+            "retrieval_cfg": retrieval_cfg,
+        }
+        cache_key = _cache_key(config, "retrieval", key_payload)
+        cached = cache.get(cache_key)
+        if isinstance(cached, dict):
+            sparse = _deserialize_chunks(cached.get("sparse", []))
+            dense = _deserialize_chunks(cached.get("dense", []))
+            combined = _deserialize_chunks(cached.get("retrieved", []))
+
+            payload["sparse_retrieved"] = sparse
+            payload["dense_retrieved"] = dense
+            payload["retrieved"] = combined
+            payload["retriever"] = retriever.__class__.__name__
+            payload["config"] = config
+            _mark_cache_hit(payload, "retrieval", True)
+            return payload
+
     candidate_sets = retriever.retrieve_candidates(query, top_k=top_k)
     sparse = list(candidate_sets.get("sparse", []))
     dense = list(candidate_sets.get("dense", []))
 
-    # Option A: simple combined list
     combined = sparse + dense
-
-    # Option B: fuse immediately if step sets `fuse: true`
     if bool(step_cfg.get("fuse", False)):
         fusion = _build_component("rank_fusion", config)
         combined = fusion.fuse([sparse, dense])
@@ -257,6 +536,19 @@ def _hybrid_retrieve_with(
     payload["retrieved"] = combined
     payload["retriever"] = retriever.__class__.__name__
     payload["config"] = config
+    _mark_cache_hit(payload, "retrieval", False)
+
+    if cache is not None and cache_key is not None:
+        cache.set(
+            cache_key,
+            {
+                "sparse": _serialize_chunks(sparse),
+                "dense": _serialize_chunks(dense),
+                "retrieved": _serialize_chunks(combined),
+            },
+            ttl_sec=_cache_ttl(config, "retrieval", fallback=900),
+        )
+
     return payload
 
 def _rank_fusion_with(fusion: RankFusion, state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -292,15 +584,57 @@ def _generate_with(generator: Generator, state: dict[str, Any], config: dict[str
     payload = _ensure_state(state)
     context = payload.get("context", "")
     if not context and payload.get("ranked"):
-        context = "\n\n".join(chunk.text if isinstance(chunk, RetrievedChunk) else chunk["content"] for chunk in payload["ranked"])
+        context = "\n\n".join(
+            chunk.text if isinstance(chunk, RetrievedChunk) else chunk["content"]
+            for chunk in payload["ranked"]
+        )
     inputs = {
         "query": payload.get("query", ""),
         "context": context
     }
     prompt = payload["prompt"]
+
+    cache = _get_cache(config)
+    cache_key = None
+    generation_cache_enabled = (
+        cache is not None
+        and _cache_enabled(config, "generation")
+        and _generation_cacheable(config)
+    )
+    if generation_cache_enabled:
+        partial_vars = getattr(prompt, "partial_variables", {})
+        if not isinstance(partial_vars, dict):
+            partial_vars = {"value": str(partial_vars)}
+
+        key_payload = {
+            "query_hash": text_hash(str(inputs["query"])),
+            "context_hash": text_hash(str(inputs["context"])),
+            "prompt_template_hash": text_hash(str(getattr(prompt, "template", ""))),
+            "prompt_partial_vars_hash": stable_hash({"partial_variables": partial_vars}),
+            "llm": config.get("models", {}).get("llm", {}),
+            "parser_model": payload.get("_step", {}).get("parser", None),
+        }
+        cache_key = _cache_key(config, "generation", key_payload)
+        cached = cache.get(cache_key)
+        if isinstance(cached, dict) and "answer_text" in cached:
+            payload["answer"] = str(cached.get("answer_text", ""))
+            payload["generator"] = generator.__class__.__name__
+            payload["config"] = config
+            _mark_cache_hit(payload, "generation", True)
+            return payload
+
     payload["answer"] = generator.generate(prompt, inputs)
     payload["generator"] = generator.__class__.__name__
     payload["config"] = config
+    _mark_cache_hit(payload, "generation", False)
+
+    if generation_cache_enabled and cache_key is not None:
+        cache.set(
+            cache_key,
+            {"answer_text": _answer_text(payload["answer"])},
+            ttl_sec=_cache_ttl(config, "generation", fallback=3600),
+        )
+
     return payload
 
 def _context_build_with(builder: ContextBuilder, state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -382,8 +716,9 @@ def _build_prompt_with(builder: PromptBuilder, state: dict[str, Any], config: di
 
 def _parse_output_with(parser: OutputParser, state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     payload = _ensure_state(state)
+    answer_text = _answer_text(payload.get("answer"))
     payload["parsed_output"] = parser.parse(
-        payload.get("answer").content,
+        answer_text,
         parser_model=payload.get("_step", {}).get("parser", None)
     )
     payload["config"] = config
@@ -393,7 +728,7 @@ def _memory_write_with(writer: MemoryWriter, state: dict[str, Any], config: dict
     payload = _ensure_state(state)
     interaction = {
         "id": payload.get("memory_id", "memory-0"),
-        "content": payload.get("answer", ""),
+        "content": _answer_text(payload.get("answer", "")),
     }
     payload["memory_record"] = writer.write(interaction)
     payload["config"] = config
@@ -496,7 +831,8 @@ COMPONENT_FACTORIES: dict[str, ComponentFactory] = {
         model_name=config.get("ranking", {}).get(
             "embedding_model_name"
         ),
-        top_n=int(config.get("ranking", {}).get("top_k", 3))
+        top_n=int(config.get("ranking", {}).get("top_k", 3)),
+        use_cache=_cache_enabled(config, "ranking_embeddings"),
     ),
     "colbert_ranker": lambda config: ColBERTRanker(),
     "cross_encoder_ranker": lambda config: CrossEncoderRanker(
@@ -508,7 +844,9 @@ COMPONENT_FACTORIES: dict[str, ComponentFactory] = {
     "rank_fusion": lambda config: RankFusion(),
     "generator": lambda config: Generator(get_llm(config)),
     "streaming_generator": lambda config: StreamingGenerator(),
-    "prompt_builder": lambda config: PromptBuilder(),
+    "prompt_builder": lambda config: PromptBuilder(
+        use_cache=_cache_enabled(config, "prompt")
+    ),
     "output_parser": lambda config: OutputParser(),
     "memory_store": lambda config: _MEMORY_STORE,
     "memory_writer": lambda config: MemoryWriter(_MEMORY_STORE),

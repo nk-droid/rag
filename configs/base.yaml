@@ -53,6 +53,23 @@ memory:
 cache:
   enabled: true
   type: in_memory   # in_memory | redis
+  namespace: rag
+  version: v1
+  default_ttl_sec: 900
+  max_entries: 2000
+  manifest_path: data/indices/init_manifest.json
+  allow_nondeterministic_generation: false
+  features:
+    retrieval: true
+    generation: false
+    ranking_embeddings: true
+    prompt: true
+    init_manifest: true
+  ttl_sec:
+    retrieval: 900
+    generation: 3600
+    ranking_embeddings: 86400
+    prompt: 86400
 
 logging:
   level: INFO

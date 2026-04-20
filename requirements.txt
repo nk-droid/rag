@@ -7,7 +7,10 @@ langchain-anthropic
 langchain-ollama
 langchain-openai
 langchain-pinecone
+langchain-tavily
 faiss-cpu
 pinecone
 rank_bm25
 sentence-transformers
+python-dotenv
+redis

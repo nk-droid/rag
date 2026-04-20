@@ -12,12 +12,22 @@ class CoarseRetriever(BaseRetriever):
         super().__init__(store=None)
         self.index_path = Path(index_path)
         self._retriever: BM25Retriever | None = None
+        self._retriever_signature: tuple[int, int] | None = None
+
+    def _index_signature(self) -> tuple[int, int] | None:
+        if not self.index_path.exists():
+            return None
+        stat = self.index_path.stat()
+        return int(stat.st_size), int(stat.st_mtime_ns)
 
     def _load(self) -> BM25Retriever | None:
-        if self._retriever is not None:
+        signature = self._index_signature()
+        if self._retriever_signature == signature:
             return self._retriever
 
-        if not self.index_path.exists():
+        if signature is None:
+            self._retriever = None
+            self._retriever_signature = None
             return None
 
         payload = json.loads(self.index_path.read_text(encoding="utf-8"))
@@ -33,9 +43,12 @@ class CoarseRetriever(BaseRetriever):
         ]
 
         if not documents:
+            self._retriever = None
+            self._retriever_signature = signature
             return None
 
         self._retriever = BM25Retriever.from_documents(documents)
+        self._retriever_signature = signature
         return self._retriever
 
     def retrieve(self, query: str, top_k: int = 5) -> list[RetrievedChunk]:

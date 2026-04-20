@@ -6,6 +6,8 @@ logging:
 
 cache:
   enabled: true
+  type: in_memory
+  default_ttl_sec: 1800
 
 models:
   llm:
