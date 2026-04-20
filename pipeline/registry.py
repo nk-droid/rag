@@ -8,7 +8,7 @@ from components.generation import Generator, OutputParser, PromptBuilder, Stream
 from components.ingestion import DirectoryLoader, DocumentLoader, MarkdownLoader, SourceNormalizer, TextLoader
 from components.indexer import EmbeddingIndexer, CoarseIndexer
 from components.memory import MemoryFilter, MemoryStore, MemoryWriter
-from components.postprocessing import AnswerCleaner, Refiner, SelfCritic
+from components.postprocessing import Refiner, SelfCritic
 from components.query import MultiQueryGenerator, QueryCleaner, QueryRewriter
 from components.ranking import (
     BaseRanker,
@@ -42,6 +42,9 @@ def _ensure_state(state: dict[str, Any] | None) -> dict[str, Any]:
 
 _COMPONENT_CACHE: dict[tuple[str, str], Any] = {}
 _CACHE_CLIENTS: dict[str, BaseCache] = {}
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_QUERY_TEMPLATE_DIR = _REPO_ROOT / "components" / "query" / "templates"
+_POSTPROCESS_TEMPLATE_DIR = _REPO_ROOT / "components" / "postprocessing" / "templates"
 
 def _config_cache_key(config: dict[str, Any]) -> str:
     vector_store = config.get("vector_store", {})
@@ -239,6 +242,107 @@ def _answer_text(answer: Any) -> str:
         return "\n".join(piece for piece in pieces if piece)
 
     return str(content)
+
+def _retrieval_queries(payload: dict[str, Any]) -> list[str]:
+    primary = str(payload.get("query", "")).strip()
+    raw_queries = payload.get("queries", [])
+
+    candidates: list[str] = []
+    if isinstance(raw_queries, list):
+        for item in raw_queries:
+            text = str(item).strip()
+            if text:
+                candidates.append(text)
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    if primary:
+        ordered.append(primary)
+        seen.add(primary.lower())
+
+    for item in candidates:
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(item)
+
+    return ordered
+
+def _as_retrieved_chunk(item: Any, fallback_index: int) -> RetrievedChunk | None:
+    if isinstance(item, RetrievedChunk):
+        return item
+
+    if isinstance(item, dict):
+        text = str(item.get("text") or item.get("content") or "").strip()
+        if not text:
+            return None
+
+        score = item.get("score", 0.0)
+        try:
+            normalized_score = float(score)
+        except (TypeError, ValueError):
+            normalized_score = 0.0
+
+        return RetrievedChunk(
+            id=str(item.get("id", f"chunk-{fallback_index}")),
+            text=text,
+            score=normalized_score,
+            metadata=dict(item.get("metadata", {}))
+            if isinstance(item.get("metadata"), dict)
+            else {},
+        )
+
+    text = str(getattr(item, "text", "")).strip()
+    if not text:
+        return None
+
+    raw_score = getattr(item, "score", 0.0)
+    try:
+        score = float(raw_score)
+    except (TypeError, ValueError):
+        score = 0.0
+
+    metadata = getattr(item, "metadata", {})
+    return RetrievedChunk(
+        id=str(getattr(item, "id", f"chunk-{fallback_index}")),
+        text=text,
+        score=score,
+        metadata=dict(metadata) if isinstance(metadata, dict) else {},
+    )
+
+def _merge_retrieval_chunks(chunks: list[Any], top_k: int) -> list[RetrievedChunk]:
+    merged: dict[str, RetrievedChunk] = {}
+    insertion_order: list[str] = []
+
+    for idx, item in enumerate(chunks):
+        chunk = _as_retrieved_chunk(item, fallback_index=idx)
+        if chunk is None:
+            continue
+
+        key = chunk.id or text_hash(chunk.text)
+        if key not in merged:
+            merged[key] = chunk
+            insertion_order.append(key)
+            continue
+
+        current = merged[key]
+        if chunk.score > current.score:
+            combined_metadata = dict(current.metadata)
+            combined_metadata.update(chunk.metadata)
+            merged[key] = RetrievedChunk(
+                id=chunk.id,
+                text=chunk.text,
+                score=chunk.score,
+                metadata=combined_metadata,
+            )
+
+    ordered = [merged[key] for key in insertion_order]
+    ordered.sort(key=lambda item: item.score, reverse=True)
+    if top_k <= 0:
+        return []
+    return ordered[:top_k]
 
 def _index_fingerprint(config: dict[str, Any]) -> str:
     embedding_index_path = Path(_get_index_path(config, "embedding_indexer"))
@@ -444,7 +548,8 @@ def _index_with(indexer: Any, state: dict[str, Any], config: dict[str, Any]) -> 
 
 def _retrieve_with(retriever: Any, state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     payload = _ensure_state(state)
-    query = payload.get("query", "")
+    queries = _retrieval_queries(payload)
+    query = queries[0] if queries else str(payload.get("query", "")).strip()
     top_k = int(payload.get("top_k", config.get("retrieval", {}).get("top_k", 5)))
     step_cfg = payload.get("_step", {}) if isinstance(payload.get("_step"), dict) else {}
 
@@ -454,6 +559,7 @@ def _retrieve_with(retriever: Any, state: dict[str, Any], config: dict[str, Any]
         key_payload = {
             "retriever": retriever.__class__.__name__,
             "query": str(query).strip(),
+            "queries": queries,
             "top_k": top_k,
             "step": step_cfg,
             "index_fingerprint": _index_fingerprint(config),
@@ -462,13 +568,26 @@ def _retrieve_with(retriever: Any, state: dict[str, Any], config: dict[str, Any]
         cached = cache.get(cache_key)
         if isinstance(cached, dict):
             payload["retrieved"] = _deserialize_chunks(cached.get("retrieved", []))
+            cached_queries = cached.get("retrieval_queries", queries)
+            payload["retrieval_queries"] = (
+                list(cached_queries) if isinstance(cached_queries, list) else queries
+            )
             payload["retriever"] = retriever.__class__.__name__
             payload["config"] = config
             _mark_cache_hit(payload, "retrieval", True)
             return payload
 
-    results = retriever.retrieve(query, top_k=top_k)
+    queries_to_run = queries or ([query] if query else [])
+    if len(queries_to_run) <= 1:
+        results = retriever.retrieve(query, top_k=top_k) if query else []
+    else:
+        gathered: list[Any] = []
+        for query_variant in queries_to_run:
+            gathered.extend(retriever.retrieve(query_variant, top_k=top_k))
+        results = _merge_retrieval_chunks(gathered, top_k=top_k)
+
     payload["retrieved"] = results
+    payload["retrieval_queries"] = queries_to_run
     payload["retriever"] = retriever.__class__.__name__
     payload["config"] = config
     _mark_cache_hit(payload, "retrieval", False)
@@ -476,7 +595,10 @@ def _retrieve_with(retriever: Any, state: dict[str, Any], config: dict[str, Any]
     if cache is not None and cache_key is not None:
         cache.set(
             cache_key,
-            {"retrieved": _serialize_chunks(results)},
+            {
+                "retrieved": _serialize_chunks(results),
+                "retrieval_queries": queries_to_run,
+            },
             ttl_sec=_cache_ttl(config, "retrieval", fallback=900),
         )
 
@@ -491,7 +613,8 @@ def _hybrid_retrieve_with(
     step_cfg = payload.get("_step", {}) if isinstance(payload.get("_step"), dict) else {}
     retrieval_cfg = config.get("retrieval", {})
 
-    query = payload.get("query", "")
+    queries = _retrieval_queries(payload)
+    query = queries[0] if queries else str(payload.get("query", "")).strip()
     top_k = int(step_cfg.get("top_k", payload.get("top_k", retrieval_cfg.get("top_k", 5))))
 
     cache = _get_cache(config)
@@ -500,6 +623,7 @@ def _hybrid_retrieve_with(
         key_payload = {
             "retriever": retriever.__class__.__name__,
             "query": str(query).strip(),
+            "queries": queries,
             "top_k": top_k,
             "candidate_multiplier": int(getattr(retriever, "candidate_multiplier", 1)),
             "fuse": bool(step_cfg.get("fuse", False)),
@@ -517,23 +641,39 @@ def _hybrid_retrieve_with(
             payload["sparse_retrieved"] = sparse
             payload["dense_retrieved"] = dense
             payload["retrieved"] = combined
+            cached_queries = cached.get("retrieval_queries", queries)
+            payload["retrieval_queries"] = (
+                list(cached_queries) if isinstance(cached_queries, list) else queries
+            )
             payload["retriever"] = retriever.__class__.__name__
             payload["config"] = config
             _mark_cache_hit(payload, "retrieval", True)
             return payload
 
-    candidate_sets = retriever.retrieve_candidates(query, top_k=top_k)
-    sparse = list(candidate_sets.get("sparse", []))
-    dense = list(candidate_sets.get("dense", []))
+    sparse_candidates: list[Any] = []
+    dense_candidates: list[Any] = []
+    queries_to_run = queries or ([query] if query else [])
+
+    for query_variant in queries_to_run:
+        candidate_sets = retriever.retrieve_candidates(query_variant, top_k=top_k)
+        sparse_candidates.extend(list(candidate_sets.get("sparse", [])))
+        dense_candidates.extend(list(candidate_sets.get("dense", [])))
+
+    candidate_multiplier = int(getattr(retriever, "candidate_multiplier", 1))
+    candidate_cap = max(top_k, top_k * candidate_multiplier)
+    sparse = _merge_retrieval_chunks(sparse_candidates, top_k=candidate_cap)
+    dense = _merge_retrieval_chunks(dense_candidates, top_k=candidate_cap)
 
     combined = sparse + dense
     if bool(step_cfg.get("fuse", False)):
         fusion = _build_component("rank_fusion", config)
         combined = fusion.fuse([sparse, dense])
+    combined = _merge_retrieval_chunks(combined, top_k=top_k)
 
     payload["sparse_retrieved"] = sparse
     payload["dense_retrieved"] = dense
     payload["retrieved"] = combined
+    payload["retrieval_queries"] = queries_to_run
     payload["retriever"] = retriever.__class__.__name__
     payload["config"] = config
     _mark_cache_hit(payload, "retrieval", False)
@@ -545,6 +685,7 @@ def _hybrid_retrieve_with(
                 "sparse": _serialize_chunks(sparse),
                 "dense": _serialize_chunks(dense),
                 "retrieved": _serialize_chunks(combined),
+                "retrieval_queries": queries_to_run,
             },
             ttl_sec=_cache_ttl(config, "retrieval", fallback=900),
         )
@@ -760,17 +901,6 @@ def _refine_with(refiner: Refiner, state: dict[str, Any], config: dict[str, Any]
     payload["config"] = config
     return payload
 
-def _clean_answer_with(cleaner: AnswerCleaner, state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-    payload = _ensure_state(state)
-    payload["answer"] = cleaner.clean(payload.get("answer", ""))
-    payload["config"] = config
-    return payload
-
-def _identity(state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-    payload = _ensure_state(state)
-    payload["config"] = config
-    return payload
-
 _MEMORY_STORE = MemoryStore()
 COMPONENT_FACTORIES: dict[str, ComponentFactory] = {
     "text_loader": lambda config: TextLoader(),
@@ -787,12 +917,18 @@ COMPONENT_FACTORIES: dict[str, ComponentFactory] = {
     "query_cleaner": lambda config: QueryCleaner(),
     "query_rewriter": lambda config: QueryRewriter(
         generator=Generator(get_llm(config)),
-        prompt_builder=PromptBuilder(use_cache=_cache_enabled(config, "prompt")),
+        prompt_builder=PromptBuilder(
+            template_dir=_QUERY_TEMPLATE_DIR,
+            use_cache=_cache_enabled(config, "prompt"),
+        ),
         parser=OutputParser(),
     ),
     "multi_query_generator": lambda config: MultiQueryGenerator(
         generator=Generator(get_llm(config)),
-        prompt_builder=PromptBuilder(use_cache=_cache_enabled(config, "prompt")),
+        prompt_builder=PromptBuilder(
+            template_dir=_QUERY_TEMPLATE_DIR,
+            use_cache=_cache_enabled(config, "prompt"),
+        ),
         parser=OutputParser(),
         max_queries=int(
             config.get("retrieval", {})
@@ -856,9 +992,22 @@ COMPONENT_FACTORIES: dict[str, ComponentFactory] = {
     "evaluator": lambda config: Evaluator(),
     "ragas_evaluator": lambda config: RagasEvaluator(),
     "trulens_evaluator": lambda config: TruLensEvaluator(),
-    "self_critic": lambda config: SelfCritic(),
-    "refiner": lambda config: Refiner(),
-    "answer_cleaner": lambda config: AnswerCleaner(),
+    "self_critic": lambda config: SelfCritic(
+        generator=Generator(get_llm(config)),
+        prompt_builder=PromptBuilder(
+            template_dir=_POSTPROCESS_TEMPLATE_DIR,
+            use_cache=_cache_enabled(config, "prompt"),
+        ),
+        parser=OutputParser(),
+    ),
+    "refiner": lambda config: Refiner(
+        generator=Generator(get_llm(config)),
+        prompt_builder=PromptBuilder(
+            template_dir=_POSTPROCESS_TEMPLATE_DIR,
+            use_cache=_cache_enabled(config, "prompt"),
+        ),
+        parser=OutputParser(),
+    ),
     "context_builder": lambda config: ContextBuilder(),
     "context_merger": lambda config: ContextMerger(),
     "context_truncator": lambda config: ContextTruncator(),
@@ -908,7 +1057,6 @@ REGISTRY: dict[str, ComponentCallable] = {
     "trulens_evaluator": lambda state, config: _evaluate_with(_build_component("trulens_evaluator", config), state, config),
     "self_critic": lambda state, config: _critique_with(_build_component("self_critic", config), state, config),
     "refiner": lambda state, config: _refine_with(_build_component("refiner", config), state, config),
-    "answer_cleaner": lambda state, config: _clean_answer_with(_build_component("answer_cleaner", config), state, config),
     "context_builder": lambda state, config: _context_build_with(_build_component("context_builder", config), state, config),
     "context_merger": lambda state, config: _context_merge_with(_build_component("context_merger", config), state, config),
     "context_truncator": lambda state, config: _context_truncate_with(

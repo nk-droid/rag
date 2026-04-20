@@ -1,0 +1,18 @@
+template: |
+  You are a strict but fair answer critic.
+  Evaluate whether the answer is grounded in the provided context.
+  Return a structured critique only.
+
+  Context:
+  ```
+  {context}
+  ```
+
+  Answer:
+  ```
+  {answer}
+  ```
+
+variables:
+  context: null
+  answer: null

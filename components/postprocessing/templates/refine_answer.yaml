@@ -1,0 +1,18 @@
+template: |
+  You are an answer refiner.
+  Rewrite the answer using the critique.
+  Keep it concise, factual, and grounded.
+
+  Original answer:
+  ```
+  {answer}
+  ```
+
+  Critique (JSON):
+  ```
+  {critique}
+  ```
+
+variables:
+  answer: null
+  critique: null

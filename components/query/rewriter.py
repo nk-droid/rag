@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from components.generation.generator import Generator
 from components.generation.output_parser import OutputParser
 from components.generation.prompt_builder import PromptBuilder
@@ -14,7 +16,9 @@ class QueryRewriter:
         parser_model: str = "RewrittenQuery",
     ) -> None:
         self.generator = generator
-        self.prompt_builder = prompt_builder or PromptBuilder()
+        self.prompt_builder = prompt_builder or PromptBuilder(
+            template_dir=Path(__file__).parent / "templates"
+        )
         self.parser = parser or OutputParser()
         self.template_name = template_name
         self.parser_model = parser_model
@@ -42,8 +46,7 @@ class QueryRewriter:
             prompt = self.prompt_builder.build(self.template_name, self.parser_model)
             raw = self.generator.generate(prompt, {"query": cleaned})
             parsed = self.parser.parse(self._to_text(raw), self.parser_model)
-            rewritten = parsed.rewritten_query.strip()
+            rewritten = parsed.query.strip()
             return rewritten or cleaned
         except Exception:
             return cleaned
-

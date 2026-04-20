@@ -19,11 +19,22 @@ class RewrittenQuery(BaseModel):
 class QueryVariants(BaseModel):
     queries: List[str] = Field(..., description="List of rewritten search query variants.")
 
+class SelfCritique(BaseModel):
+    needs_refine: bool = Field(..., description="Whether the answer needs refinement based on self-critique.")
+    grounded: bool = Field(..., description="Whether the answer is grounded in the provided context.")
+    issues: List[str] = Field(..., description="List of issues found in the answer.")
+    suggestions: List[str] = Field(..., description="List of suggestions for improving the answer.")
+
+class RefinedAnswer(BaseModel):
+    answer: str = Field(..., description="Refined answer to the query based on self-critique.")
+
 pydantic_models = {
     "Answer": Answer,
     "SemanticChunks": SemanticChunks,
     "RewrittenQuery": RewrittenQuery,
-    "QueryVariants": QueryVariants
+    "QueryVariants": QueryVariants,
+    "SelfCritique": SelfCritique,
+    "RefinedAnswer": RefinedAnswer,
 }
     
 class OutputParser:

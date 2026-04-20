@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from components.generation.generator import Generator
 from components.generation.output_parser import OutputParser
 from components.generation.prompt_builder import PromptBuilder
@@ -15,7 +17,9 @@ class MultiQueryGenerator:
         parser_model: str = "QueryVariants",
     ) -> None:
         self.generator = generator
-        self.prompt_builder = prompt_builder or PromptBuilder()
+        self.prompt_builder = prompt_builder or PromptBuilder(
+            template_dir=Path(__file__).parent / "templates"
+        )
         self.parser = parser or OutputParser()
         self.max_queries = max(1, int(max_queries))
         self.template_name = template_name

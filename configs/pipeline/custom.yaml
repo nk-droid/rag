@@ -18,6 +18,15 @@ init_pipeline:
 
 pipeline:
   steps:
+    - name: query_clean
+      component: query_cleaner
+
+    - name: query_rewrite
+      component: query_rewriter
+
+    - name: query_expand
+      component: multi_query_generator
+
     - name: retriever
       component: hybrid_retriever
       dense_retriever: fine_retriever
@@ -36,6 +45,12 @@ pipeline:
 
     - name: generate
       component: llm_generator
+
+    - name: self_critic
+      component: self_critic
+
+    - name: refine
+      component: refiner
 
     - name: parser
       component: output_parser
