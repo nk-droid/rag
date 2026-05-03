@@ -1,172 +1,320 @@
 # Modular RAG
 
-This is my personal modular RAG playground. I use it to iterate on pipeline design quickly without rewriting the whole app each time.
-
-The repo is config-driven: I define steps in YAML, and `pipeline/registry.py` wires those steps to actual components.
-
-## Current Scope (What Actually Works Today)
-
-As of now, the **main maintained path is `custom` pipeline**.
-
-### `custom` pipeline flow
-
-```mermaid
-flowchart LR
-    A[directory_loader] --> B[recursive_chunker]
-    B --> C1[embedding_indexer]
-    B --> C2[coarse_indexer]
-    C1 --> D[hybrid_retriever]
-    C2 --> D
-    D --> E[rank_fusion]
-    E --> F[embedding_ranker]
-    F --> G[prompt_builder]
-    G --> H[llm_generator]
-    H --> I[output_parser]
-```
-
-### What this means in practice
-
-- ingestion: directory-based loading works
-- chunking: recursive chunking works
-- indexing: both embedding + coarse lexical index are built in init phase
-- retrieval: hybrid retriever pulls from dense (`fine_retriever`) + sparse (`coarse_retriever`)
-- fusion: `rank_fusion` currently combines result lists (not weighted RRF yet)
-- ranking: `embedding_ranker` is used in `custom.yaml`
-- generation: prompt template + LLM call + Pydantic parse works
-
-## Run
+A config-driven retrieval-augmented generation framework. Define a pipeline as a YAML step sequence - the orchestrator resolves, builds, and wires every component at runtime. Swap models, retrievers, or postprocessors by editing config.
 
 ```bash
-python3 cli.py --pipeline custom --runtime cli --env dev
+python cli.py --pipeline custom --runtime cli --env dev
 ```
 
-Current CLI behavior:
+---
 
-- query is hardcoded in `cli.py`
-- source path is hardcoded in `cli.py`
-- output prints `state["parsed_output"].answer`
+## Why This Exists
 
-## Config Notes
+Most RAG implementations are tightly coupled - swapping the retriever means editing generation code, changing the LLM means touching the pipeline. This system treats every component (chunker, retriever, ranker, generator, critic) as a registered, independently configurable unit. The orchestrator wires them together at runtime based purely on YAML.
 
-### Base config
+---
 
-`configs/base.yaml` currently includes:
+## Architecture
 
-- LLM: Ollama (`llama3.2:latest`)
-- embeddings: Ollama (`qwen3-embedding:4b`)
-- retrieval:
-  - `top_k: 20`
-  - `hybrid.candidate_multiplier: 4`
-- ranking:
-  - `top_k: 5`
-  - `embedding_model_name`
-  - `cross_encoder_model_name`
+```
+CLI
+ │
+ ▼
+RAGOrchestrator          ← merges base + env + pipeline + runtime YAML
+ │
+ ├── initialize()        ← load → chunk → index  (skipped on fingerprint cache hit)
+ │
+ └── run()               ← clean → rewrite → expand → retrieve → rank → generate → critique → refine → parse
+         │
+         ▼
+     REGISTRY            ← 41 component keys, each bound to a factory + handler
+         │
+         ▼
+     Components          ← stateless, independently configurable units
+         │
+         ▼
+     Infra               ← LLM, embeddings, cache, vector store
+```
 
-### Orchestrator feature
+**Config resolution:** `configs/base.yaml` → `configs/env/{dev|prod}.yaml` → `configs/pipeline/{name}.yaml` → `configs/runtime/{cli|api}.yaml`. Each layer overrides the previous. Components receive already-merged values, never raw config dicts.
 
-`pipeline/orchestrator.py` supports:
+---
 
-- `component: string`
-- `component: [list, of, components]`
+## Active Pipeline: `custom`
 
-So I can run one step name with multiple components (used for dual indexers in `custom.yaml`).
+The `custom` pipeline is the primary maintained path. It runs end-to-end locally with Ollama.
 
-## Component Status
+**Init phase** (skipped on cache hit):
+```
+directory_loader → recursive_chunker → coarse_indexer
+```
 
-### Implemented and usable
+**Query phase:**
+```
+query_cleaner
+    → query_rewriter          ← LLM rewrites query for better retrieval
+    → multi_query_generator   ← LLM expands into multiple query variants
+    → coarse_retriever        ← BM25 sparse retrieval
+    → rank_fusion             ← combines result sets
+    → embedding_ranker        ← reranks by embedding similarity
+    → prompt_builder          ← YAML template + Pydantic schema injection
+    → llm_generator
+    → self_critic             ← LLM checks answer grounding against context
+    → refiner                 ← LLM rewrites answer if critic flags issues
+    → output_parser
+```
 
-- Ingestion:
-  - `DirectoryLoader`, `DocumentLoader`, `MarkdownLoader`, `TextLoader`, `SourceNormalizer`
-- Chunking:
-  - `RecursiveChunker`, `SemanticChunker`
-- Indexing:
-  - `EmbeddingIndexer`, `CoarseIndexer`
-- Retrieval:
-  - `CoarseRetriever` (BM25 scoring)
-  - `FineRetriever` (vector similarity)
-  - `HybridRetriever` (collects dense + sparse candidates)
-- Context:
-  - `ContextBuilder`, `ContextMerger`, `ContextTruncator`
-- Ranking:
-  - `EmbeddingRanker`
-  - `CrossEncoderRanker` (wired and available)
-  - `RankFusion` (currently basic list fusion)
-- Generation:
-  - `PromptBuilder`, `Generator`, `OutputParser`
-- Postprocessing:
-  - `AnswerCleaner`, `Refiner`, `SelfCritic` (simple baseline behavior)
+> `hybrid_retriever` (dense + sparse) is wired and available but not active in the current `custom.yaml`. Enabling it also requires `embedding_indexer` in the init phase.
 
-### Present but not implemented yet (`raise NotImplementedError`)
+### Smart re-indexing
+
+Before each init, the orchestrator fingerprints the configuration:
+
+```python
+fingerprint = stable_hash({
+    "sources":         [file_signature(path) for path in source_files],
+    "chunking":        config["chunking"],
+    "embedding_model": config["models"]["embedding"],
+    "index_paths":     [embedding_index_path, coarse_index_path],
+})
+```
+
+If the fingerprint matches the saved manifest and index artifacts exist, the entire load → chunk → index phase is skipped. Changing a source file, the chunking config, or the embedding model triggers a full re-index automatically.
+
+---
+
+## Components
+
+### ✅ Implemented
+
+| Domain | Components |
+|--------|-----------|
+| **Ingestion** | `DirectoryLoader`, `DocumentLoader`, `MarkdownLoader`, `TextLoader`, `SourceNormalizer` |
+| **Chunking** | `RecursiveChunker`, `SemanticChunker` (LLM-guided boundary detection) |
+| **Indexing** | `EmbeddingIndexer` (FAISS), `CoarseIndexer` (BM25, JSON-persisted) |
+| **Query** | `QueryCleaner`, `QueryRewriter` (LLM), `MultiQueryGenerator` (LLM) |
+| **Retrieval** | `CoarseRetriever` (BM25), `FineRetriever` (FAISS dense), `HybridRetriever` |
+| **Ranking** | `RankFusion`, `EmbeddingRanker`, `CrossEncoderRanker` (`ms-marco-MiniLM-L-6-v2`) |
+| **Context** | `ContextBuilder`, `ContextMerger`, `ContextTruncator` |
+| **Generation** | `PromptBuilder`, `Generator` / `LLMGenerator`, `OutputParser` |
+| **Postprocessing** | `SelfCritic` (LLM grounding check), `Refiner` (LLM rewrite on critic fail) |
+| **Memory** | `MemoryStore`, `MemoryWriter`, `MemoryFilter` |
+
+### 🔲 Planned
 
 - `LateChunker`
-- `StreamingGenerator`
-- `ExternalRetriever`, `GraphRetriever`, `MemoryRetriever`
+- `GraphRetriever`
+- `MemoryRetriever`
+- `ExternalRetriever`
 - `ColBERTRanker`
-- evaluation adapters:
-  - `Evaluator`, `RagasEvaluator`, `TruLensEvaluator`
-- `LocalVectorDB`
-- FAISS append path in `LangChainFAISSStore.add_documents` when index already exists
+- `StreamingGenerator`
+- `RagasEvaluator`
+- `TruLensEvaluator`
 
-## Important Known Limitations
+---
 
-1. `pipeline/registry.py` currently chunks with `chunk_inputs[1:]`.
-- This skips the first extracted input and is marked FIXME.
+## Infrastructure
 
-2. `rank_fusion` is basic.
-- Right now it combines result sets; it does not yet do weighted RRF scoring.
+### LLM Providers
 
-3. Some pipeline YAMLs are stale compared to registry wiring.
-- `custom.yaml` is the one I actively keep aligned.
+| Provider | Notes |
+|----------|-------|
+| Ollama | Default - `llama3.2:latest` |
+| OpenAI | Requires `OPENAI_API_KEY` |
+| Anthropic | Requires `ANTHROPIC_API_KEY` |
+| HuggingFace | Local inference |
 
-4. CLI is not interactive yet.
-- Query/source overrides are still hardcoded in code.
+Switch via `configs/base.yaml` - no other changes needed:
 
-## Project Structure
-
-```text
-rag/
-├── components/
-│   ├── chunking/
-│   ├── context/
-│   ├── evaluation/
-│   ├── generation/
-│   ├── indexer/
-│   ├── ingestion/
-│   ├── memory/
-│   ├── postprocessing/
-│   ├── query/
-│   ├── ranking/
-│   └── retrieval/
-├── configs/
-│   ├── base.yaml
-│   ├── env/
-│   ├── pipeline/
-│   └── runtime/
-├── infra/
-├── pipeline/
-├── cli.py
-└── README.md
+```yaml
+models:
+  llm:
+    provider: anthropic
+    model_name: claude-sonnet-4-20250514
 ```
+
+### Embedding Backends
+
+| Provider | Notes |
+|----------|-------|
+| Ollama | Default - `qwen3-embedding:4b` |
+| OpenAI | `text-embedding-*` models |
+| HuggingFace | Local sentence-transformers |
+
+### Cache
+
+Two backends sharing a `BaseCache` interface:
+
+**In-memory (default):** TTL + LRU eviction, bounded by `max_entries`. Configurable per pipeline stage.
+
+**Redis:** JSON-serialised values with namespaced key tracking and scoped `clear()`.
+
+```yaml
+# configs/base.yaml
+cache:
+  type: in_memory      # in_memory | redis
+  default_ttl_sec: 900
+  max_entries: 2000
+  features:
+    retrieval: true
+    ranking_embeddings: true
+    prompt: true
+    generation: false
+```
+
+---
 
 ## Setup
 
+**Requirements:** Python 3.11+ · Ollama (for default config)
+
 ```bash
-cd /Users/nidhishkumar/Personal/rag
-python3 -m venv .venv
+git clone https://github.com/nk-droid/rag
+cd rag
+
+python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-If BM25 is missing locally:
-
+Pull default models:
 ```bash
-pip install rank_bm25
+ollama pull llama3.2:latest
+ollama pull qwen3-embedding:4b
 ```
 
-## What I’d Build Next
+For OpenAI or Anthropic, create a `.env`:
+```env
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+REDIS_URL=redis://localhost:6379   # only if using Redis cache
+```
 
-- weighted RRF in `RankFusion`
-- interactive CLI inputs (query, source, top_k, template)
-- remove the `chunk_inputs[1:]` workaround
-- normalize older pipeline YAMLs so they match registry keys
-- finish streaming + evaluation adapters
+---
+
+## Running
+
+```bash
+python cli.py --pipeline custom --runtime cli --env dev
+```
+
+| Flag | Options | Effect |
+|------|---------|--------|
+| `--pipeline` | `custom`, `simple`, `advanced` | Which pipeline YAML to load |
+| `--runtime` | `cli`, `api` | Enables/disables Rich terminal output |
+| `--env` | `dev`, `prod` | Sets log level, cache TTL, temperature |
+
+> **Note:** Query text and source path are currently hardcoded in `cli.py`. Interactive `--query` and `--sources` arguments are on the roadmap.
+
+---
+
+## Configuration
+
+### Enabling hybrid retrieval
+
+To switch from BM25-only to hybrid (dense + sparse) in `custom.yaml`:
+
+```yaml
+# 1. Uncomment embedding_indexer in init_pipeline
+- name: index
+  component:
+    - embedding_indexer
+    - coarse_indexer
+
+# 2. Switch retriever in pipeline
+- name: retriever
+  component: hybrid_retriever
+```
+
+### Switching ranker
+
+```yaml
+- name: rerank
+  component: cross_encoder_ranker   # or: embedding_ranker
+```
+
+### Running multiple components on one step
+
+```yaml
+- name: index
+  component:
+    - embedding_indexer
+    - coarse_indexer
+```
+
+The orchestrator runs both and merges results into the shared state.
+
+---
+
+## Project Structure
+
+```
+rag/
+├── components/
+│   ├── chunking/          RecursiveChunker, SemanticChunker
+│   ├── context/           ContextBuilder, ContextMerger, ContextTruncator
+│   ├── evaluation/        Evaluator base, RagasEvaluator (planned)
+│   ├── generation/        PromptBuilder, Generator, OutputParser
+│   ├── indexer/           EmbeddingIndexer (FAISS), CoarseIndexer (BM25)
+│   ├── ingestion/         DirectoryLoader, MarkdownLoader, TextLoader, SourceNormalizer
+│   ├── memory/            MemoryStore, MemoryWriter, MemoryFilter
+│   ├── postprocessing/    SelfCritic, Refiner
+│   ├── query/             QueryCleaner, QueryRewriter, MultiQueryGenerator
+│   ├── ranking/           EmbeddingRanker, CrossEncoderRanker, RankFusion
+│   └── retrieval/         CoarseRetriever, FineRetriever, HybridRetriever
+├── configs/
+│   ├── base.yaml
+│   ├── env/               dev.yaml, prod.yaml
+│   ├── pipeline/          custom, simple, advanced, debug
+│   └── runtime/           cli, api
+├── infra/
+│   ├── cache/             InMemoryCache (TTL+LRU), RedisCache
+│   ├── embeddings/        Provider factory (OpenAI, HuggingFace, Ollama)
+│   ├── llm/               Provider factory (OpenAI, Anthropic, HuggingFace, Ollama)
+│   ├── logging/           Rich terminal runtime, structured formatters
+│   └── storage/           FAISS store, vector store factory
+├── pipeline/
+│   ├── orchestrator.py    Init + run orchestration, fingerprint-based cache
+│   ├── registry.py        41 component bindings
+│   ├── registry_handlers.py
+│   └── component_factories.py
+├── data/raw/
+├── cli.py
+└── requirements.txt
+```
+
+---
+
+## Known Limitations
+
+| Issue | Detail |
+|-------|--------|
+| `chunk_inputs[1:]` in `registry.py` | First document silently skipped on every run - tracked as FIXME |
+| `RankFusion` is basic list concatenation | Weighted RRF scoring not yet implemented |
+| `HybridRetriever` | Returns duplicates without score normalisation across retrieval methods |
+| `simple` / `advanced` / `debug` pipelines | Partially stale - `custom` is the maintained path |
+
+---
+
+## Roadmap
+
+- [ ] Fix `chunk_inputs[1:]` - first document currently dropped
+- [ ] Weighted Reciprocal Rank Fusion in `RankFusion`
+- [ ] Score normalisation + deduplication in `HybridRetriever`
+- [ ] `LateChunker` - embedding-aware chunking over full-document representations
+- [ ] `GraphRetriever` - graph traversal over document relationship graph
+- [ ] `RagasEvaluator` - faithfulness, answer relevancy, context precision, context recall
+- [ ] `docker-compose.yml` - zero-dependency local setup
+- [ ] Align `simple`, `advanced`, `debug` pipeline YAMLs with current registry keys
+
+---
+
+## Stack
+
+- Python 3.11+
+- LangChain
+- FAISS (`faiss-cpu`)
+- Pydantic
+- Redis
+- Ollama
+- Rich
