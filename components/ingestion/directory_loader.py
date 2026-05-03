@@ -1,18 +1,22 @@
 from pathlib import Path
 
+from components._base import ComponentSettings
 from components.ingestion.document_loader import DocumentLoader
 from components.ingestion.ingestion_schema import SourceDocument
 
-class DirectoryLoader:
-    """Walk a directory and load supported files."""
+class DirectoryLoaderSettings(ComponentSettings):
+    _CONFIG_PATH = "ingestion.directory"
 
-    def __init__(self, loader: DocumentLoader | None = None, recursive: bool = True) -> None:
-        self.loader = loader or DocumentLoader()
-        self.recursive = recursive
+    recursive: bool = True
+
+class DirectoryLoader:
+    def __init__(self, settings: DirectoryLoaderSettings, loader: DocumentLoader) -> None:
+        self.settings = settings
+        self.loader = loader
 
     def load(self, source: str) -> list[SourceDocument]:
         root = Path(source)
-        pattern = "**/*" if self.recursive else "*"
+        pattern = "**/*" if self.settings.recursive else "*"
         documents: list[SourceDocument] = []
 
         for path in sorted(root.glob(pattern)):
@@ -21,9 +25,3 @@ class DirectoryLoader:
             documents.extend(self.loader.load(str(path)))
 
         return documents
-    
-if __name__ == "__main__":
-    loader = DirectoryLoader()
-    data = loader.load("/Users/nidhishkumar/Personal/rag/data/raw/docs")
-    print(data)
-    print(len(data))

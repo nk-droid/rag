@@ -1,5 +1,11 @@
+from components._base import ComponentSettings
+
+class QueryCleanerSettings(ComponentSettings):
+    _CONFIG_PATH = "retrieval.query_clean"
+
 class QueryCleaner:
-    """Normalize raw user queries before downstream processing."""
+    def __init__(self, settings: QueryCleanerSettings) -> None:
+        self.settings = settings
 
     def clean(self, query: str) -> str:
         if not query:

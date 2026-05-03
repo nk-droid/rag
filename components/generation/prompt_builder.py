@@ -1,8 +1,13 @@
-import yaml
 from pathlib import Path
-from langchain_core.prompts import PromptTemplate
+
+import yaml
 from langchain_core.output_parsers import PydanticOutputParser
-from components.generation.output_parser import pydantic_models #FIXME
+from langchain_core.prompts import PromptTemplate
+
+from components._base import ComponentSettings
+from components.generation.output_parser import pydantic_models  # FIXME
+
+_DEFAULT_TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 formatting = """
 Return the result in the following format:
@@ -11,12 +16,26 @@ Return the result in the following format:
 Don't return anything else
 """
 
-class PromptBuilder:
-    """Build prompts from a named template and runtime inputs."""
+class PromptBuilderSettings(ComponentSettings):
+    _CONFIG_PATH = "generation.prompt"
 
-    def __init__(self, template_dir: str | Path | None = None, use_cache: bool = True) -> None:
-        self.template_dir = Path(template_dir) if template_dir else Path(__file__).parent / "templates"
-        self.use_cache = use_cache
+    use_cache: bool = True
+    template_dir: str | None = None
+
+class PromptBuilder:
+    def __init__(
+        self,
+        settings: PromptBuilderSettings,
+        template_dir: Path | str | None = None,
+    ) -> None:
+        self.settings = settings
+        if template_dir is not None:
+            resolved = Path(template_dir)
+        elif settings.template_dir:
+            resolved = Path(settings.template_dir)
+        else:
+            resolved = _DEFAULT_TEMPLATE_DIR
+        self.template_dir = resolved
         self._compiled_prompts: dict[tuple[str, int, str | None], PromptTemplate] = {}
 
     def _template_signature(self, template_path: Path) -> tuple[str, int]:
@@ -26,7 +45,7 @@ class PromptBuilder:
     def build(self, template_name: str, parser_model: str | None = None) -> PromptTemplate:
         template_path = self.template_dir / template_name
         template_key = (*self._template_signature(template_path), parser_model)
-        if self.use_cache:
+        if self.settings.use_cache:
             cached = self._compiled_prompts.get(template_key)
             if cached is not None:
                 return cached
@@ -59,6 +78,6 @@ class PromptBuilder:
             partial_variables=partial_variables,
         )
 
-        if self.use_cache:
+        if self.settings.use_cache:
             self._compiled_prompts[template_key] = prompt
         return prompt

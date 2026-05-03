@@ -1,6 +1,7 @@
 app:
   name: modular-rag
   version: 1.0
+  env: default
 
 models:
   llm:
@@ -13,6 +14,9 @@ models:
     provider: ollama
     model_name: qwen3-embedding:4b
 
+vector_store:
+  provider: faiss
+
 retrieval:
   top_k: 20
   hybrid:
@@ -20,35 +24,73 @@ retrieval:
     rrf_k: 60
     sparse_weight: 0.45
     dense_weight: 0.55
+    fuse: false
+  query_rewrite:
+    template_name: rewrite_query.yaml
+    parser_model: RewrittenQuery
+  query_expansion:
+    max_queries: 3
+    template_name: multi_query.yaml
+    parser_model: QueryVariants
+  external:
+    topic: general
+    max_results: 5
 
-vector_store:
-  embedding_indexer:
+indexers:
+  embedding:
     path: data/indices/faiss_index
-
-  coarse_indexer:
+    vector_store:
+      provider: faiss
+  coarse:
     path: data/indices/coarse_index.json
 
 chunking:
-  strategy: late
-  chunk_size: 512
-  chunk_overlap: 50
-
+  recursive:
+    chunk_size: 512
+    chunk_overlap: 50
   semantic:
     template_name: chunk.yaml
-    parser: SemanticChunks
-    models:
-      llm:
-        provider: ollama
-        model_name: llama3.2:latest
+    parser_model: SemanticChunks
+    llm:
+      provider: ollama
+      model_name: llama3.2:latest
 
 ranking:
   enabled: true
-  top_k: 5
-  cross_encoder_model_name: cross-encoder/ms-marco-MiniLM-L-6-v2
-  embedding_model_name: qwen3-embedding:4b
+  embedding:
+    model_name: qwen3-embedding:4b
+    top_n: 5
+    use_cache: true
+    strategy: mmr
+    lambda_param: 0.7
+  cross_encoder:
+    model_name: cross-encoder/ms-marco-MiniLM-L-6-v2
+    top_n: 3
+
+generation:
+  prompt:
+    use_cache: true
+
+postprocessing:
+  self_critic:
+    template_name: self_critic.yaml
+    parser_model: SelfCritique
+  refiner:
+    template_name: refine_answer.yaml
+    parser_model: RefinedAnswer
+
+context:
+  truncate:
+    max_tokens: 256
 
 memory:
   enabled: false
+  store:
+    max_entries: 10000
+
+ingestion:
+  directory:
+    recursive: true
 
 cache:
   enabled: true
@@ -62,16 +104,22 @@ cache:
   features:
     retrieval: true
     generation: false
-    ranking_embeddings: true
-    prompt: true
     init_manifest: true
   ttl_sec:
     retrieval: 900
     generation: 3600
-    ranking_embeddings: 86400
-    prompt: 86400
 
 logging:
   level: INFO
   rich:
     enabled: true
+
+evaluation:
+  sources: data/raw/docs
+  samples_file: data/raw/eval_set.json
+  ragas:
+    llm_model: llama3.2:latest
+    embedding_model: qwen3-embedding:4b
+  evaluators:
+    - type: ragas
+      id: ragas

@@ -8,13 +8,13 @@ init_pipeline:
 
     - name: index
       component:
-        - embedding_indexer
+        # - embedding_indexer
         - coarse_indexer
       options:
-        embedding_indexer:
-          index_path: data/indices/faiss_index
+        # embedding_indexer:
+        #   path: data/indices/faiss_index
         coarse_indexer:
-          index_path: data/indices/coarse_index.json
+          path: data/indices/coarse_index.json
 
 pipeline:
   steps:
@@ -28,9 +28,10 @@ pipeline:
       component: multi_query_generator
 
     - name: retriever
-      component: hybrid_retriever
-      dense_retriever: fine_retriever
-      sparse_retriever: coarse_retriever
+      # component: hybrid_retriever
+      # dense_retriever: fine_retriever
+      # sparse_retriever: coarse_retriever
+      component: coarse_retriever
 
     - name: rank fusion
       component: rank_fusion

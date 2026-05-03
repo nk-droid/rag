@@ -1,27 +1,26 @@
-from pathlib import Path
-
+from components._base import ComponentSettings
 from components.generation.generator import Generator
 from components.generation.output_parser import OutputParser
 from components.generation.prompt_builder import PromptBuilder
 
-class QueryRewriter:
-    """Rewrite a user query into a more effective retrieval query."""
+class QueryRewriterSettings(ComponentSettings):
+    _CONFIG_PATH = "retrieval.query_rewrite"
 
+    template_name: str = "rewrite_query.yaml"
+    parser_model: str = "RewrittenQuery"
+
+class QueryRewriter:
     def __init__(
         self,
-        generator: Generator | None = None,
-        prompt_builder: PromptBuilder | None = None,
-        parser: OutputParser | None = None,
-        template_name: str = "rewrite_query.yaml",
-        parser_model: str = "RewrittenQuery",
+        settings: QueryRewriterSettings,
+        generator: Generator,
+        prompt_builder: PromptBuilder,
+        parser: OutputParser,
     ) -> None:
+        self.settings = settings
         self.generator = generator
-        self.prompt_builder = prompt_builder or PromptBuilder(
-            template_dir=Path(__file__).parent / "templates"
-        )
-        self.parser = parser or OutputParser()
-        self.template_name = template_name
-        self.parser_model = parser_model
+        self.prompt_builder = prompt_builder
+        self.parser = parser
 
     @staticmethod
     def _to_text(output) -> str:
@@ -39,13 +38,12 @@ class QueryRewriter:
         if not cleaned:
             return ""
 
-        if self.generator is None:
-            return cleaned
-
         try:
-            prompt = self.prompt_builder.build(self.template_name, self.parser_model)
+            prompt = self.prompt_builder.build(
+                self.settings.template_name, self.settings.parser_model
+            )
             raw = self.generator.generate(prompt, {"query": cleaned})
-            parsed = self.parser.parse(self._to_text(raw), self.parser_model)
+            parsed = self.parser.parse(self._to_text(raw), self.settings.parser_model)
             rewritten = parsed.query.strip()
             return rewritten or cleaned
         except Exception:

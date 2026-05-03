@@ -1,4 +1,9 @@
-from components.postprocessing.refiner import Refiner
-from components.postprocessing.self_critic import SelfCritic
+from components.postprocessing.refiner import Refiner, RefinerSettings
+from components.postprocessing.self_critic import SelfCritic, SelfCriticSettings
 
-__all__ = ["Refiner", "SelfCritic"]
+__all__ = [
+    "Refiner",
+    "RefinerSettings",
+    "SelfCritic",
+    "SelfCriticSettings",
+]

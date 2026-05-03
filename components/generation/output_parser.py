@@ -1,8 +1,9 @@
 from typing import List
+
+from pydantic import BaseModel, Field
 from langchain_core.output_parsers import PydanticOutputParser
 
-# TODO: Move to separate files
-from pydantic import Field, BaseModel
+from components._base import ComponentSettings
 
 class Answer(BaseModel):
     answer: str = Field(..., description="Answer to the query")
@@ -36,9 +37,13 @@ pydantic_models = {
     "SelfCritique": SelfCritique,
     "RefinedAnswer": RefinedAnswer,
 }
-    
+
+class OutputParserSettings(ComponentSettings):
+    _CONFIG_PATH = "generation.output_parser"
+
 class OutputParser:
-    """Convert raw model output into a structured payload."""
+    def __init__(self, settings: OutputParserSettings | None = None) -> None:
+        self.settings = settings or OutputParserSettings()
 
     def parse(self, text: str, parser_model: str):
         parser = PydanticOutputParser(pydantic_object=pydantic_models.get(parser_model))

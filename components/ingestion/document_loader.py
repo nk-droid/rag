@@ -1,19 +1,23 @@
 from pathlib import Path
 
+from components._base import ComponentSettings
 from components.ingestion.ingestion_schema import SourceDocument
 from components.ingestion.markdown_loader import MarkdownLoader
 from components.ingestion.text_loader import TextLoader
 
-class DocumentLoader:
-    """Route supported sources to the appropriate file loader."""
+class DocumentLoaderSettings(ComponentSettings):
+    _CONFIG_PATH = "ingestion.document"
 
+class DocumentLoader:
     def __init__(
         self,
-        markdown_loader: MarkdownLoader | None = None,
-        text_loader: TextLoader | None = None,
+        settings: DocumentLoaderSettings,
+        markdown_loader: MarkdownLoader,
+        text_loader: TextLoader,
     ) -> None:
-        self.markdown_loader = markdown_loader or MarkdownLoader()
-        self.text_loader = text_loader or TextLoader()
+        self.settings = settings
+        self.markdown_loader = markdown_loader
+        self.text_loader = text_loader
 
     def load(self, source: str) -> list[SourceDocument]:
         path = Path(source)

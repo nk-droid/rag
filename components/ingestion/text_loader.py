@@ -1,10 +1,15 @@
 from pathlib import Path
 
+from components._base import ComponentSettings
 from components.ingestion.base_loader import BaseLoader
 from components.ingestion.ingestion_schema import SourceDocument
 
+class TextLoaderSettings(ComponentSettings):
+    _CONFIG_PATH = "ingestion.text"
+
 class TextLoader(BaseLoader):
-    """Load plain-text files into source documents."""
+    def __init__(self, settings: TextLoaderSettings) -> None:
+        self.settings = settings
 
     def load(self, source: str) -> list[SourceDocument]:
         path = Path(source)

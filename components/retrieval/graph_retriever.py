@@ -1,9 +1,12 @@
+from components.retrieval.base_retriever import BaseRetriever, BaseRetrieverSettings
 from components.shared_types import RetrievedChunk
 
-from components.retrieval.base_retriever import BaseRetriever
+class GraphRetrieverSettings(BaseRetrieverSettings):
+    _CONFIG_PATH = "retrieval.graph"
 
 class GraphRetriever(BaseRetriever):
-    """Retrieve context by traversing graph relationships."""
+    def __init__(self, settings: GraphRetrieverSettings) -> None:
+        super().__init__(settings=settings, store=None)
 
     def retrieve(self, query: str, top_k: int = 5) -> list[RetrievedChunk]:
         raise NotImplementedError

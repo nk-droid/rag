@@ -1,29 +1,31 @@
-from pathlib import Path
-
+from components._base import ComponentSettings
 from components.generation.generator import Generator
 from components.generation.output_parser import OutputParser
 from components.generation.prompt_builder import PromptBuilder
 
-class MultiQueryGenerator:
-    """Expand a single query into multiple search variations."""
+class MultiQueryGeneratorSettings(ComponentSettings):
+    _CONFIG_PATH = "retrieval.query_expansion"
 
+    max_queries: int = 3
+    template_name: str = "multi_query.yaml"
+    parser_model: str = "QueryVariants"
+
+class MultiQueryGenerator:
     def __init__(
         self,
-        generator: Generator | None = None,
-        prompt_builder: PromptBuilder | None = None,
-        parser: OutputParser | None = None,
-        max_queries: int = 3,
-        template_name: str = "multi_query.yaml",
-        parser_model: str = "QueryVariants",
+        settings: MultiQueryGeneratorSettings,
+        generator: Generator,
+        prompt_builder: PromptBuilder,
+        parser: OutputParser,
     ) -> None:
+        self.settings = settings
         self.generator = generator
-        self.prompt_builder = prompt_builder or PromptBuilder(
-            template_dir=Path(__file__).parent / "templates"
-        )
-        self.parser = parser or OutputParser()
-        self.max_queries = max(1, int(max_queries))
-        self.template_name = template_name
-        self.parser_model = parser_model
+        self.prompt_builder = prompt_builder
+        self.parser = parser
+
+    @property
+    def max_queries(self) -> int:
+        return max(1, int(self.settings.max_queries))
 
     @staticmethod
     def _to_text(output) -> str:
@@ -41,16 +43,15 @@ class MultiQueryGenerator:
         if not cleaned:
             return []
 
-        if self.generator is None:
-            return [cleaned]
-
         try:
-            prompt = self.prompt_builder.build(self.template_name, self.parser_model)
+            prompt = self.prompt_builder.build(
+                self.settings.template_name, self.settings.parser_model
+            )
             raw = self.generator.generate(
                 prompt,
                 {"query": cleaned, "max_queries": self.max_queries},
             )
-            parsed = self.parser.parse(self._to_text(raw), self.parser_model)
+            parsed = self.parser.parse(self._to_text(raw), self.settings.parser_model)
             variants = [q.strip() for q in parsed.queries if isinstance(q, str) and q.strip()]
 
             deduped: list[str] = []
@@ -65,6 +66,6 @@ class MultiQueryGenerator:
             if cleaned.lower() not in seen:
                 deduped.insert(0, cleaned)
 
-            return deduped[:self.max_queries]
+            return deduped[: self.max_queries]
         except Exception:
             return [cleaned]

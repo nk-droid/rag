@@ -1,16 +1,21 @@
 import json
 from pathlib import Path
 
-from langchain_core.documents import Document
 from langchain_community.retrievers import BM25Retriever
+from langchain_core.documents import Document
 
+from components.retrieval.base_retriever import BaseRetriever, BaseRetrieverSettings
 from components.shared_types import RetrievedChunk
-from components.retrieval.base_retriever import BaseRetriever
+
+class CoarseRetrieverSettings(BaseRetrieverSettings):
+    _CONFIG_PATH = "indexers.coarse"
+
+    path: str = "data/indices/coarse_index.json"
 
 class CoarseRetriever(BaseRetriever):
-    def __init__(self, index_path: str | Path = "data/indexes/coarse_index.json") -> None:
-        super().__init__(store=None)
-        self.index_path = Path(index_path)
+    def __init__(self, settings: CoarseRetrieverSettings) -> None:
+        super().__init__(settings=settings, store=None)
+        self.index_path = Path(settings.path)
         self._retriever: BM25Retriever | None = None
         self._retriever_signature: tuple[int, int] | None = None
 
@@ -89,5 +94,5 @@ class CoarseRetriever(BaseRetriever):
                     metadata=metadata,
                 )
             )
-            
+
         return results

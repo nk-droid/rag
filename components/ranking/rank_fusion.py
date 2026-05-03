@@ -1,7 +1,12 @@
+from components._base import ComponentSettings
 from components.shared_types import RetrievedChunk
 
+class RankFusionSettings(ComponentSettings):
+    _CONFIG_PATH = "ranking.fusion"
+
 class RankFusion:
-    """Combine multiple ranked result sets into one."""
+    def __init__(self, settings: RankFusionSettings) -> None:
+        self.settings = settings
 
     def fuse(self, result_sets: list[list[RetrievedChunk]]) -> list[RetrievedChunk]:
         fused: list[RetrievedChunk] = []

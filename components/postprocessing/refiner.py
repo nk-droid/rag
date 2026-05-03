@@ -1,29 +1,29 @@
 import json
-from pathlib import Path
 from typing import Any
 
+from components._base import ComponentSettings
 from components.generation.generator import Generator
-from components.generation.output_parser import OutputParser, RefinedAnswer
+from components.generation.output_parser import OutputParser
 from components.generation.prompt_builder import PromptBuilder
 
-class Refiner:
-    """LLM-based refiner that rewrites answer based on critique feedback."""
+class RefinerSettings(ComponentSettings):
+    _CONFIG_PATH = "postprocessing.refiner"
 
+    template_name: str = "refine_answer.yaml"
+    parser_model: str = "RefinedAnswer"
+
+class Refiner:
     def __init__(
         self,
-        generator: Generator | None = None,
-        prompt_builder: PromptBuilder | None = None,
-        parser: OutputParser | None = None,
-        template_name: str = "refine_answer.yaml",
-        parser_model: str = "RefinedAnswer",
+        settings: RefinerSettings,
+        generator: Generator,
+        prompt_builder: PromptBuilder,
+        parser: OutputParser,
     ) -> None:
+        self.settings = settings
         self.generator = generator
-        self.prompt_builder = prompt_builder or PromptBuilder(
-            template_dir=Path(__file__).parent / "templates"
-        )
-        self.parser = parser or OutputParser()
-        self.template_name = template_name
-        self.parser_model = parser_model
+        self.prompt_builder = prompt_builder
+        self.parser = parser
 
     @staticmethod
     def _to_text(value: Any) -> str:
@@ -58,11 +58,10 @@ class Refiner:
         if not critique or not critique.get("needs_refine", False):
             return raw_answer_text
 
-        if self.generator is None:
-            return raw_answer_text
-
         try:
-            prompt = self.prompt_builder.build(self.template_name, self.parser_model)
+            prompt = self.prompt_builder.build(
+                self.settings.template_name, self.settings.parser_model
+            )
             raw = self.generator.generate(
                 prompt,
                 {
@@ -70,7 +69,7 @@ class Refiner:
                     "critique": json.dumps(critique, ensure_ascii=False),
                 },
             )
-            parsed = self.parser.parse(self._to_text(raw), self.parser_model)
+            parsed = self.parser.parse(self._to_text(raw), self.settings.parser_model)
             refined = getattr(parsed, "answer", "").strip()
             if not refined:
                 return raw_answer_text

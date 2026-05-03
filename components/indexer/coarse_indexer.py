@@ -3,24 +3,22 @@ import json
 from pathlib import Path
 from typing import Any
 
+from components._base import ComponentSettings
 from components.indexer.indexer_schema import IndexRecord
 
-class CoarseIndexer:
-    def __init__(self, index_path: str | Path = "data/indexes/coarse_index.json") -> None:
-        self.index_path = Path(index_path)
+class CoarseIndexerSettings(ComponentSettings):
+    _CONFIG_PATH = "indexers.coarse"
 
-    def index(
-        self,
-        chunks: list[Any],
-        config: dict[str, Any],
-        vector_db_path: str | Path | None = None,
-    ) -> list[IndexRecord]:
+    path: str = "data/indices/coarse_index.json"
+
+class CoarseIndexer:
+    def __init__(self, settings: CoarseIndexerSettings) -> None:
+        self.settings = settings
+        self.index_path = Path(settings.path)
+
+    def index(self, chunks: list[Any]) -> list[IndexRecord]:
         if not chunks:
             return []
-
-        path = Path(vector_db_path) if vector_db_path else Path(
-            config.get("coarse_index", {}).get("path", str(self.index_path))
-        )
 
         docs: list[dict[str, Any]] = []
         records: list[IndexRecord] = []
@@ -36,8 +34,11 @@ class CoarseIndexer:
             docs.append({"id": doc_id, "text": text, "metadata": metadata})
             records.append(IndexRecord(id=doc_id, text=text, embedding=[], metadata=metadata))
 
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"version": 1, "documents": docs}, ensure_ascii=False, indent=4), encoding="utf-8")
+        self.index_path.parent.mkdir(parents=True, exist_ok=True)
+        self.index_path.write_text(
+            json.dumps({"version": 1, "documents": docs}, ensure_ascii=False, indent=4),
+            encoding="utf-8",
+        )
         return records
 
     def _chunk_text(self, chunk: Any) -> str:

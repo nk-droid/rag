@@ -1,11 +1,15 @@
-from infra.llm.llm_wrapper import BaseLLM
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableLambda
 
-class Generator:
-    """Generate a final answer from a query and assembled context."""
+from components._base import ComponentSettings
+from infra.llm.llm_wrapper import BaseLLM
 
-    def __init__(self, llm: BaseLLM) -> None:
+class GeneratorSettings(ComponentSettings):
+    _CONFIG_PATH = "generation.generator"
+
+class Generator:
+    def __init__(self, settings: GeneratorSettings, llm: BaseLLM) -> None:
+        self.settings = settings
         self.llm = llm
 
     def _get_llm_runnable(self):

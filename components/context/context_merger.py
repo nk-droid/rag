@@ -1,7 +1,12 @@
+from components._base import ComponentSettings
 from components.shared_types import RetrievedChunk
 
+class ContextMergerSettings(ComponentSettings):
+    _CONFIG_PATH = "context.merger"
+
 class ContextMerger:
-    """Merge overlapping or duplicated chunks."""
+    def __init__(self, settings: ContextMergerSettings) -> None:
+        self.settings = settings
 
     def merge(self, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
         merged: list[RetrievedChunk] = []

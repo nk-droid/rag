@@ -1,44 +1,54 @@
+from typing import Literal
+
 import numpy as np
-from components.shared_types import RetrievedChunk
-from components.ranking.base_ranker import BaseRanker
-from components.ranking.scoring_utils import ScoringStrategy, MMRScoring
 from langchain_ollama import OllamaEmbeddings
+
+from components.ranking.base_ranker import BaseRanker, BaseRankerSettings
+from components.ranking.scoring_utils import CosineScoring, MMRScoring, ScoringStrategy
+from components.shared_types import RetrievedChunk
 from infra.cache.cache_keys import text_hash
 
+class EmbeddingRankerSettings(BaseRankerSettings):
+    _CONFIG_PATH = "ranking.embedding"
+
+    model_name: str = "qwen3-embedding:4b"
+    top_n: int = 5
+    use_cache: bool = True
+    strategy: Literal["mmr", "cosine"] = "mmr"
+    lambda_param: float = 0.7
+
+def _build_strategy(settings: EmbeddingRankerSettings) -> ScoringStrategy:
+    if settings.strategy == "mmr":
+        return MMRScoring(lambda_param=settings.lambda_param)
+    if settings.strategy == "cosine":
+        return CosineScoring()
+    return MMRScoring(lambda_param=settings.lambda_param)
+
 class EmbeddingRanker(BaseRanker):
-    def __init__(
-        self,
-        model_name,
-        strategy: ScoringStrategy = MMRScoring(),
-        top_n=5,
-        use_cache: bool = True,
-    ): # TODO: Pass strategy from config
-        resolved_model_name = model_name or "qwen3-embedding:4b"
+    def __init__(self, settings: EmbeddingRankerSettings) -> None:
         super().__init__(
-            model = OllamaEmbeddings(model=resolved_model_name), # FIXME: Make this configurable
-            top_n = top_n
+            settings=settings,
+            model=OllamaEmbeddings(model=settings.model_name),
         )
-        self.strategy = strategy
-        self.model_name = resolved_model_name
-        self.use_cache = use_cache
+        self.strategy = _build_strategy(settings)
         self._query_embedding_cache: dict[str, list[float]] = {}
         self._document_embedding_cache: dict[str, list[float]] = {}
 
     def _query_cache_key(self, query: str) -> str:
-        return f"{self.model_name}:query:{query.strip()}"
+        return f"{self.settings.model_name}:query:{query.strip()}"
 
     def _doc_cache_key(self, candidate: RetrievedChunk) -> str:
         if candidate.id:
-            return f"{self.model_name}:doc:{candidate.id}"
-        return f"{self.model_name}:doc_hash:{text_hash(candidate.text)}"
+            return f"{self.settings.model_name}:doc:{candidate.id}"
+        return f"{self.settings.model_name}:doc_hash:{text_hash(candidate.text)}"
 
     def rank(self, query: str, candidates: list[RetrievedChunk]) -> list[RetrievedChunk]:
         if not candidates:
             return []
 
-        if not self.use_cache:
+        if not self.settings.use_cache:
             query_vec = np.array(self.model.embed_query(query)).reshape(1, -1)
-            doc_vecs = np.array(self.model.embed_documents([candidate.text for candidate in candidates]))
+            doc_vecs = np.array(self.model.embed_documents([c.text for c in candidates]))
             return self.strategy.select(query_vec, doc_vecs, candidates, self.top_n)
 
         query_key = self._query_cache_key(query)
@@ -46,23 +56,19 @@ class EmbeddingRanker(BaseRanker):
             self._query_embedding_cache[query_key] = self.model.embed_query(query)
         query_vec = np.array(self._query_embedding_cache[query_key]).reshape(1, -1)
 
-        missing_doc_keys: list[str] = []
-        missing_doc_texts: list[str] = []
-        ordered_doc_keys: list[str] = []
+        missing_keys: list[str] = []
+        missing_texts: list[str] = []
+        ordered_keys: list[str] = []
         for candidate in candidates:
-            doc_key = self._doc_cache_key(candidate)
-            ordered_doc_keys.append(doc_key)
-            if doc_key not in self._document_embedding_cache:
-                missing_doc_keys.append(doc_key)
-                missing_doc_texts.append(candidate.text)
+            key = self._doc_cache_key(candidate)
+            ordered_keys.append(key)
+            if key not in self._document_embedding_cache:
+                missing_keys.append(key)
+                missing_texts.append(candidate.text)
 
-        if missing_doc_texts:
-            embedded_docs = self.model.embed_documents(missing_doc_texts)
-            for key, vector in zip(missing_doc_keys, embedded_docs):
-                self._document_embedding_cache[key] = vector
+        if missing_texts:
+            for key, vec in zip(missing_keys, self.model.embed_documents(missing_texts)):
+                self._document_embedding_cache[key] = vec
 
-        doc_vecs = np.array(
-            [self._document_embedding_cache[key] for key in ordered_doc_keys]
-        )
-
+        doc_vecs = np.array([self._document_embedding_cache[k] for k in ordered_keys])
         return self.strategy.select(query_vec, doc_vecs, candidates, self.top_n)

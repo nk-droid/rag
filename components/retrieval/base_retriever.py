@@ -1,10 +1,14 @@
 from abc import ABC, abstractmethod
+
+from components._base import ComponentSettings
 from components.shared_types import RetrievedChunk
 
-class BaseRetriever(ABC):
-    """Common interface for retrievers."""
+class BaseRetrieverSettings(ComponentSettings):
+    pass
 
-    def __init__(self, store: object | None = None) -> None:
+class BaseRetriever(ABC):
+    def __init__(self, settings: BaseRetrieverSettings, store: object | None = None) -> None:
+        self.settings = settings
         self.store = store
 
     @abstractmethod

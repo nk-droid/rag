@@ -1,8 +1,12 @@
+from components.ranking.base_ranker import BaseRanker, BaseRankerSettings
 from components.shared_types import RetrievedChunk
-from components.ranking.base_ranker import BaseRanker
+
+class ColBERTRankerSettings(BaseRankerSettings):
+    _CONFIG_PATH = "ranking.colbert"
 
 class ColBERTRanker(BaseRanker):
-    """Score candidates with a ColBERT-style late interaction model."""
+    def __init__(self, settings: ColBERTRankerSettings) -> None:
+        super().__init__(settings=settings, model=None)
 
     def rank(self, query: str, candidates: list[RetrievedChunk]) -> list[RetrievedChunk]:
         raise NotImplementedError

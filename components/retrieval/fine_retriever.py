@@ -1,10 +1,18 @@
 import hashlib
+from typing import Any
 
+from components.retrieval.base_retriever import BaseRetriever, BaseRetrieverSettings
 from components.shared_types import RetrievedChunk
-from components.retrieval.base_retriever import BaseRetriever
+
+class FineRetrieverSettings(BaseRetrieverSettings):
+    _CONFIG_PATH = "indexers.embedding"
+
+    path: str = "data/indices/faiss_index"
+    vector_store: dict[str, Any] = {"provider": "faiss"}
 
 class FineRetriever(BaseRetriever):
-    """Fetch a narrow, precision-oriented set of candidates."""
+    def __init__(self, settings: FineRetrieverSettings, store: object | None = None) -> None:
+        super().__init__(settings=settings, store=store)
 
     def retrieve(self, query: str, top_k: int = 5) -> list[RetrievedChunk]:
         if self.store is None or not query.strip() or top_k <= 0:
@@ -12,7 +20,7 @@ class FineRetriever(BaseRetriever):
 
         docs_with_score = self.store.similarity_search_with_score(
             query=query,
-            k=top_k
+            k=top_k,
         )
 
         results: list[RetrievedChunk] = []
