@@ -35,26 +35,14 @@ class RAGOrchestrator:
         return Path(str(configured))
 
     def _embedding_index_path(self) -> Path:
-        vector_store = self.config.get("vector_store", {})
-        embedding_cfg = vector_store.get("embedding_indexer", {})
-        if isinstance(embedding_cfg, dict) and embedding_cfg.get("path"):
-            return Path(str(embedding_cfg["path"]))
+        from pipeline.registry_utils import _get_index_path
 
-        legacy = vector_store.get("path")
-        if legacy:
-            return Path(str(legacy))
-        return Path("data/indices/faiss_index")
+        return Path(_get_index_path(self.config, "embedding_indexer"))
 
     def _coarse_index_path(self) -> Path:
-        vector_store = self.config.get("vector_store", {})
-        coarse_cfg = vector_store.get("coarse_indexer", {})
-        if isinstance(coarse_cfg, dict) and coarse_cfg.get("path"):
-            return Path(str(coarse_cfg["path"]))
+        from pipeline.registry_utils import _get_index_path
 
-        legacy = self.config.get("coarse_index", {}).get("path")
-        if legacy:
-            return Path(str(legacy))
-        return Path("data/indices/coarse_index.json")
+        return Path(_get_index_path(self.config, "coarse_indexer"))
 
     def _index_artifacts_exist(self) -> bool:
         embedding_path = self._embedding_index_path()
