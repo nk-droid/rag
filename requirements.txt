@@ -14,3 +14,4 @@ rank_bm25
 sentence-transformers
 python-dotenv
 redis
+pydantic
