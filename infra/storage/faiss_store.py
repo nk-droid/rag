@@ -4,8 +4,6 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
 class LangChainFAISSStore:
-    """Small wrapper around LangChain FAISS persistence."""
-
     def __init__(self, embeddings, persist_path: str | Path = "data/embeddings/faiss_index") -> None:
         self.embeddings = embeddings
         self.persist_path = Path(persist_path)

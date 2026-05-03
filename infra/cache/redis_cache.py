@@ -5,13 +5,6 @@ import redis
 from infra.cache.base_cache import BaseCache
 
 class RedisCache(BaseCache):
-    """
-    Redis-backed cache with optional TTL.
-
-    Values are stored as JSON strings and indexed in a Redis set so `clear()`
-    removes only keys written by this cache instance namespace.
-    """
-
     def __init__(
         self,
         redis_url: str,

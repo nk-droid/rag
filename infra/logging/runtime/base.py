@@ -1,8 +1,10 @@
+from infra.logging.recent_logs import add_log
+
 class Runtime:
-    def start(self):
+    def start(self, msg: str):
         raise NotImplementedError
 
-    def stop(self):
+    def stop(self, msg: str = None):
         raise NotImplementedError
 
     def add_step(self, name: str):
@@ -12,4 +14,4 @@ class Runtime:
         return func(*args, **kwargs)
 
     def log(self, message: str):
-        raise NotImplementedError
+        add_log(str(message))

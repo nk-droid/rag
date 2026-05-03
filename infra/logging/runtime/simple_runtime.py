@@ -2,14 +2,14 @@ from infra.logging.runtime.base import Runtime
 import time
 
 class SimpleRuntime(Runtime):
-    def start(self):
-        print("Initializing RAG system...")
+    def start(self, msg: str):
+        print(msg)
 
-    def stop(self):
-        print("System ready.")
+    def stop(self, msg: str = None):
+        print(msg)
 
     def add_step(self, name):
-        print(f"→ {name}")
+        pass
 
     def run_step(self, name, func, *args, **kwargs):
         print(f"Running: {name}")

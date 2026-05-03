@@ -5,14 +5,6 @@ from typing import Any
 from infra.cache.base_cache import BaseCache
 
 class InMemoryCache(BaseCache):
-    """
-    In-process cache with TTL + LRU eviction.
-
-    - TTL is optional per entry.
-    - Accessed keys are promoted to most-recently-used.
-    - Capacity is bounded by ``max_entries``.
-    """
-
     def __init__(self, max_entries: int = 2000, default_ttl_sec: int | None = 900) -> None:
         if max_entries <= 0:
             raise ValueError("max_entries must be > 0")

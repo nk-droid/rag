@@ -1,10 +1,10 @@
 from infra.logging.runtime.base import Runtime
 
 class SilentRuntime(Runtime):
-    def start(self):
+    def start(self, msg: str):
         pass
 
-    def stop(self):
+    def stop(self, msg: str = None):
         pass
 
     def add_step(self, name):
