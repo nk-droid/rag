@@ -1,7 +1,16 @@
+# Minimal runnable RAG: BM25 retrieve -> prompt -> generate -> parse.
+# Use this when learning the orchestrator or smoke-testing config changes.
+
+init_pipeline:
+  steps:
+    - { name: loader, component: directory_loader }
+    - { name: chunk, component: recursive_chunker }
+    - { name: index, component: coarse_indexer }
+
 pipeline:
   steps:
-    - name: retrieve
-      component: hybrid_retriever
-
-    - name: generate
-      component: llm_generator
+    - { name: query_clean, component: query_cleaner }
+    - { name: retrieve, component: coarse_retriever }
+    - { name: prompt, component: prompt_builder, template_name: summarize.yaml, parser: Answer }
+    - { name: generate, component: llm_generator }
+    - { name: parser, component: output_parser, parser: Answer }

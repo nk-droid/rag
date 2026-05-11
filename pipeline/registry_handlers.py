@@ -92,6 +92,15 @@ def _retrieve_with(retriever: Any, state: dict[str, Any], config: dict[str, Any]
     top_k = int(payload.get("top_k", config.get("retrieval", {}).get("top_k", 5)))
     step_cfg = payload.get("_step", {}) if isinstance(payload.get("_step"), dict) else {}
 
+    if_under = step_cfg.get("if_under")
+    if if_under is not None and len(payload.get("retrieved", [])) >= int(if_under):
+        payload["retrieval_skipped"] = retriever.__class__.__name__
+        payload["config"] = config
+        return payload
+
+    merge_with_existing = bool(step_cfg.get("merge_with_existing", False))
+    existing = list(payload.get("retrieved", [])) if merge_with_existing else []
+
     cache = _get_cache(config)
     cache_key = None
     if cache is not None and _cache_enabled(config, "retrieval"):
@@ -106,7 +115,10 @@ def _retrieve_with(retriever: Any, state: dict[str, Any], config: dict[str, Any]
         cache_key = _cache_key(config, "retrieval", key_payload)
         cached = cache.get(cache_key)
         if isinstance(cached, dict):
-            payload["retrieved"] = _deserialize_chunks(cached.get("retrieved", []))
+            fresh = _deserialize_chunks(cached.get("retrieved", []))
+            payload["retrieved"] = (
+                _merge_retrieval_chunks(existing + fresh, top_k=top_k) if merge_with_existing else fresh
+            )
             cached_queries = cached.get("retrieval_queries", queries)
             payload["retrieval_queries"] = (
                 list(cached_queries) if isinstance(cached_queries, list) else queries
@@ -125,6 +137,10 @@ def _retrieve_with(retriever: Any, state: dict[str, Any], config: dict[str, Any]
             gathered.extend(retriever.retrieve(query_variant, top_k=top_k))
         results = _merge_retrieval_chunks(gathered, top_k=top_k)
 
+    fresh_results = results
+    if merge_with_existing:
+        results = _merge_retrieval_chunks(existing + results, top_k=top_k)
+
     payload["retrieved"] = results
     payload["retrieval_queries"] = queries_to_run
     payload["retriever"] = retriever.__class__.__name__
@@ -135,7 +151,7 @@ def _retrieve_with(retriever: Any, state: dict[str, Any], config: dict[str, Any]
         cache.set(
             cache_key,
             {
-                "retrieved": _serialize_chunks(results),
+                "retrieved": _serialize_chunks(fresh_results),
                 "retrieval_queries": queries_to_run,
             },
             ttl_sec=_cache_ttl(config, "retrieval", fallback=900),

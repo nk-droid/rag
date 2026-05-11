@@ -1,0 +1,25 @@
+# Local-first retrieval with web fallback.
+# coarse_retriever pulls from the local BM25 index. If it returns fewer
+# than `if_under` chunks, external_retriever (Tavily) tops the list up
+# with web results, merged + deduped against whatever local found.
+# Otherwise external is skipped entirely (saves the API call).
+#
+# Requires TAVILY_API_KEY in .env when the fallback fires.
+
+init_pipeline:
+  steps:
+    - { name: loader, component: directory_loader }
+    - { name: chunk, component: recursive_chunker }
+    - { name: index, component: coarse_indexer }
+
+pipeline:
+  steps:
+    - { name: query_clean, component: query_cleaner }
+    - { name: retrieve_local, component: coarse_retriever }
+    - { name: retrieve_external, component: external_retriever, if_under: 3, merge_with_existing: true }
+    - { name: rerank,  component: embedding_ranker }
+    - { name: context_build, component: context_builder }
+    - { name: context_trunc, component: context_truncator }
+    - { name: prompt, component: prompt_builder, template_name: summarize.yaml, parser: Answer }
+    - { name: generate, component: llm_generator }
+    - { name: parser, component: output_parser, parser: Answer }

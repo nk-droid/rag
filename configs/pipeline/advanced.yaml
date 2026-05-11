@@ -1,14 +1,24 @@
+# Full-featured pipeline: dense + sparse hybrid retrieval, cross-encoder
+# reranking, critic + refiner loop. Requires `ollama pull` for both the
+# LLM and the embedding model listed in configs/base.yaml.
+
+init_pipeline:
+  steps:
+    - { name: loader, component: directory_loader }
+    - { name: chunk, component: recursive_chunker }
+    - { name: index, component: [embedding_indexer, coarse_indexer] }
+
 pipeline:
   steps:
-    - name: chunk
-      component: late_chunker
-
-    - name: retrieve
-      component: hybrid_retriever
-
-    - name: rank
-      component: reranker
-      enabled: true
-
-    - name: generate
-      component: llm_generator
+    - { name: query_clean, component: query_cleaner }
+    - { name: query_rewrite, component: query_rewriter }
+    - { name: query_expand, component: multi_query_generator }
+    - { name: retrieve, component: hybrid_retriever, fuse: true }
+    - { name: rerank, component: cross_encoder_ranker }
+    - { name: context_build, component: context_builder }
+    - { name: context_trunc, component: context_truncator }
+    - { name: prompt, component: prompt_builder, template_name: summarize.yaml, parser: Answer }
+    - { name: generate, component: llm_generator }
+    - { name: critic, component: self_critic }
+    - { name: refine, component: refiner }
+    - { name: parser, component: output_parser, parser: Answer }

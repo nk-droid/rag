@@ -1,58 +1,19 @@
 init_pipeline:
   steps:
-    - name: loader
-      component: directory_loader
-
-    - name: chunk
-      component: recursive_chunker
-
-    - name: index
-      component:
-        # - embedding_indexer
-        - coarse_indexer
-      options:
-        # embedding_indexer:
-        #   path: data/indices/faiss_index
-        coarse_indexer:
-          path: data/indices/coarse_index.json
+    - { name: loader, component: directory_loader }
+    - { name: chunk, component: recursive_chunker }
+    - { name: index, component: [coarse_indexer], options: { coarse_indexer: { path: data/indices/coarse_index.json } } }
 
 pipeline:
   steps:
-    - name: query_clean
-      component: query_cleaner
-
-    - name: query_rewrite
-      component: query_rewriter
-
-    - name: query_expand
-      component: multi_query_generator
-
-    - name: retriever
-      # component: hybrid_retriever
-      # dense_retriever: fine_retriever
-      # sparse_retriever: coarse_retriever
-      component: coarse_retriever
-
-    - name: rank fusion
-      component: rank_fusion
-
-    - name: rerank
-      component: embedding_ranker
-
-    - name: prompt builder
-      component: prompt_builder
-      template_name: summarize.yaml
-      parser: Answer
-
-    - name: generate
-      component: llm_generator
-
-    - name: self_critic
-      component: self_critic
-
-    - name: refine
-      component: refiner
-
-    - name: parser
-      component: output_parser
-      parser: Answer
+    - { name: query_clean, component: query_cleaner }
+    - { name: query_rewrite, component: query_rewriter }
+    - { name: query_expand, component: multi_query_generator }
+    - { name: retriever, component: coarse_retriever }
+    - { name: rank_fusion, component: rank_fusion }
+    - { name: rerank, component: embedding_ranker }
+    - { name: prompt, component: prompt_builder, template_name: summarize.yaml, parser: Answer }
+    - { name: generate, component: llm_generator }
+    - { name: self_critic, component: self_critic }
+    - { name: refine, component: refiner }
+    - { name: parser, component: output_parser, parser: Answer }
