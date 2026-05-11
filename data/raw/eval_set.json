@@ -1,0 +1,26 @@
+{
+  "question": [
+    "In transformer architecture and training, why does scaling data and model size change system behavior beyond small toy examples?",
+    "What practical deployment challenge do transformer variants across language, vision, and multimodal systems try to solve?",
+    "In RAG foundations, what is the role of indexing before answer generation?",
+    "For production RAG systems, why are monitoring and data freshness central operational concerns?",
+    "How do classical graph/tree search methods differ from heuristic search in their decision process?",
+    "In information retrieval systems, why are ranking and query understanding critical after indexing?",
+    "When studying ancient to medieval history, why do historians emphasize method and evidence rather than only timelines?",
+    "What major shifts characterize early modern to contemporary world history according to broad survey framing?",
+    "In OCR pipelines, why are layout analysis and language modeling important in addition to character recognition?",
+    "In named entity extraction system design, why are annotation quality and domain adaptation necessary for reliable performance?"
+  ],
+  "ground_truth": [
+    "At larger scales, data diversity, optimization dynamics, and representation capacity create new behaviors and failure modes that are not visible in toy settings.",
+    "They adapt the core transformer idea to different modalities and constraints so real-world systems can balance quality, latency, and robustness in production.",
+    "Indexing builds searchable structures over source content so retrieval can quickly fetch relevant evidence for grounded generation.",
+    "RAG quality depends on current and trustworthy context, so teams must track retrieval/generation behavior and keep sources updated to prevent stale or misleading answers.",
+    "Classical graph/tree methods often follow explicit state-space traversal rules, while heuristic methods use informed estimates to prioritize promising paths.",
+    "Indexing enables candidate retrieval, but ranking and query understanding determine whether the top results actually match user intent and relevance needs.",
+    "Historical method and evidence help validate claims, compare interpretations, and avoid oversimplified narratives based only on chronology.",
+    "Key shifts include exploration and empire expansion, industrialization, nationalism, decolonization, and growing global interdependence.",
+    "Document structure and linguistic context help disambiguate noisy text, improve recognition accuracy, and support downstream document intelligence tasks.",
+    "Good annotations define consistent targets, and domain adaptation handles distribution shifts, both of which are required for robust entity extraction outside training conditions."
+  ]
+}
