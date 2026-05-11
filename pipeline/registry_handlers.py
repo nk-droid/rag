@@ -203,11 +203,14 @@ def _hybrid_retrieve_with(
     sparse = _merge_retrieval_chunks(sparse_candidates, top_k=candidate_cap)
     dense = _merge_retrieval_chunks(dense_candidates, top_k=candidate_cap)
 
-    combined = sparse + dense
     if bool(step_cfg.get("fuse", False)):
         fusion = _build_aux_component("rank_fusion", config)
         combined = fusion.fuse([sparse, dense])
-    combined = _merge_retrieval_chunks(combined, top_k=top_k)
+        combined = _merge_retrieval_chunks(combined, top_k=top_k)
+    else:
+        # Delegate to HybridRetriever.retrieve() so per-source normalisation + weighting
+        # happen before any cross-source comparison.
+        combined = retriever.retrieve(query, top_k=top_k)
 
     payload["sparse_retrieved"] = sparse
     payload["dense_retrieved"] = dense

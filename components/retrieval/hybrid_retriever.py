@@ -7,7 +7,6 @@ class HybridRetrieverSettings(BaseRetrieverSettings):
     _CONFIG_PATH = "retrieval.hybrid"
 
     candidate_multiplier: int = 4
-    rrf_k: int = 60
     sparse_weight: float = 0.45
     dense_weight: float = 0.55
     fuse: bool = False
@@ -34,5 +33,41 @@ class HybridRetriever(BaseRetriever):
         return {"sparse": sparse, "dense": dense}
 
     def retrieve(self, query: str, top_k: int = 5) -> list[RetrievedChunk]:
-        c = self.retrieve_candidates(query, top_k=top_k)
-        return c["sparse"] + c["dense"]
+        candidates = self.retrieve_candidates(query, top_k=top_k)
+        sparse = self._normalize(candidates["sparse"])
+        dense = self._normalize(candidates["dense"])
+
+        merged: dict[str, RetrievedChunk] = {}
+        for chunk, weight in self._weighted_stream(sparse, dense):
+            key = chunk.id or f"text::{hash(chunk.text)}"
+            weighted_score = chunk.score * weight
+            incumbent = merged.get(key)
+            if incumbent is None:
+                merged[key] = RetrievedChunk(
+                    id=chunk.id, text=chunk.text, score=weighted_score, metadata=dict(chunk.metadata)
+                )
+            elif weighted_score > incumbent.score:
+                incumbent.score = weighted_score
+                incumbent.metadata.update(chunk.metadata)
+
+        return sorted(merged.values(), key=lambda c: c.score, reverse=True)[:top_k]
+
+    def _weighted_stream(self, sparse: list[RetrievedChunk], dense: list[RetrievedChunk]):
+        for chunk in sparse:
+            yield chunk, self.settings.sparse_weight
+        for chunk in dense:
+            yield chunk, self.settings.dense_weight
+
+    @staticmethod
+    def _normalize(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+        if not chunks:
+            return []
+        scores = [c.score for c in chunks]
+        lo, hi = min(scores), max(scores)
+        span = hi - lo
+        if span == 0:
+            return [RetrievedChunk(id=c.id, text=c.text, score=1.0, metadata=dict(c.metadata)) for c in chunks]
+        return [
+            RetrievedChunk(id=c.id, text=c.text, score=(c.score - lo) / span, metadata=dict(c.metadata))
+            for c in chunks
+        ]

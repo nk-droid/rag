@@ -106,7 +106,6 @@ REGISTRY: dict[str, ComponentCallable] = {
     "memory_filter": bind("memory_filter", _memory_filter_with),
     "evaluator": bind("evaluator", _evaluate_with),
     "ragas_evaluator": bind("ragas_evaluator", _evaluate_with),
-    "trulens_evaluator": bind("trulens_evaluator", _evaluate_with),
     "self_critic": bind("self_critic", _critique_with),
     "refiner": bind("refiner", _refine_with),
     "context_builder": bind("context_builder", _context_build_with),

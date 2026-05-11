@@ -298,5 +298,4 @@ COMPONENT_FACTORIES: dict[str, ComponentFactory] = {
     # evaluation
     "evaluator": lambda c: build_component(Evaluator, EvaluatorSettings, c),
     "ragas_evaluator": lambda c: build_component(RagasEvaluator, RagasEvaluatorSettings, c),
-    "trulens_evaluator": lambda c: build_component(Evaluator, EvaluatorSettings, c),
 }
