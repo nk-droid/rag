@@ -206,4 +206,5 @@ __marimo__/
 
 # Processed data
 data/indices
+data/intermediate
 data/processed
