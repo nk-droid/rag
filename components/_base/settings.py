@@ -19,7 +19,9 @@ class ComponentSettings(BaseModel):
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "ComponentSettings":
-        return cls(**cls._slice(config))
+        sliced = cls._slice(config)
+        known = {k: v for k, v in sliced.items() if k in cls.model_fields}
+        return cls(**known)
 
     def with_overrides(self, overrides: dict[str, Any]) -> "ComponentSettings":
         if not overrides:

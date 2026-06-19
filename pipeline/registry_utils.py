@@ -313,6 +313,8 @@ def _merge_retrieval_chunks(chunks: list[Any], top_k: int) -> list[RetrievedChun
 _INDEXER_ALIASES = {
     "embedding_indexer": "embedding",
     "coarse_indexer": "coarse",
+    "repo_graph_indexer": "graph",
+    "graph_indexer": "graph",
 }
 
 def _get_index_path(config: dict[str, Any], indexer_key: str) -> str:
@@ -355,7 +357,22 @@ def _get_index_path(config: dict[str, Any], indexer_key: str) -> str:
             return str(legacy_path)
         return "data/indices/coarse_index.json"
 
-    raise ValueError(f"Unsupported indexer key: {indexer_key}")
+    if canonical == "graph":
+        return "data/indices/repo_graph.json"
+
+    return f"data/indices/{canonical}.json"
+
+def _pipeline_component_names(config: dict[str, Any], pipeline_key: str) -> list[str]:
+    pipeline_cfg = config.get(pipeline_key, {})
+    steps = pipeline_cfg.get("steps", []) if isinstance(pipeline_cfg, dict) else []
+    names: list[str] = []
+    for step in steps:
+        component = step.get("component") if isinstance(step, dict) else None
+        if isinstance(component, list):
+            names.extend(str(c) for c in component)
+        elif component:
+            names.append(str(component))
+    return names
 
 def _index_fingerprint(config: dict[str, Any]) -> str:
     embedding_index_path = Path(_get_index_path(config, "embedding_indexer"))
@@ -374,6 +391,7 @@ def _index_fingerprint(config: dict[str, Any]) -> str:
         "coarse_artifact": file_signature(coarse_index_path),
         "embedding_model": config.get("models", {}).get("embedding", {}),
         "vector_store": config.get("vector_store", {}),
+        "init_components": _pipeline_component_names(config, "init_pipeline"),
     }
     return stable_hash(payload)
 

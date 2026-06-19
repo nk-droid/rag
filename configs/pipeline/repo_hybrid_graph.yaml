@@ -1,0 +1,19 @@
+init_pipeline:
+  steps:
+    - { name: loader, component: repo_loader }
+    - { name: chunk, component: code_aware_chunker }
+    - { name: index, component: [embedding_indexer, coarse_indexer, repo_graph_indexer] }
+
+pipeline:
+  steps:
+    - { name: query_clean, component: query_cleaner }
+    - { name: query_rewrite, component: query_rewriter }
+    - { name: query_expand, component: multi_query_generator }
+    - { name: retrieve, component: hybrid_retriever, fuse: true }
+    - { name: graph_expand, component: graph_expander, max_expanded_chunks: 20 }
+    - { name: rerank, component: embedding_ranker, top_n: 12 }
+    - { name: context_build, component: context_builder }
+    - { name: context_trunc, component: context_truncator, max_tokens: 1500 }
+    - { name: prompt, component: prompt_builder, template_name: repo_impact_analysis.yaml, parser: Answer }
+    - { name: generate, component: llm_generator }
+    - { name: parser, component: output_parser, parser: Answer }

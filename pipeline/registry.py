@@ -15,6 +15,7 @@ from pipeline.registry_handlers import (
     _critique_with,
     _evaluate_with,
     _generate_with,
+    _graph_expand_with,
     _hybrid_retrieve_with,
     _index_with,
     _ingest_with,
@@ -34,34 +35,29 @@ from pipeline.registry_handlers import (
 from pipeline.registry_utils import _config_cache_key
 
 ComponentCallable = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
-
 _COMPONENT_CACHE: dict[tuple[str, str], Any] = {}
 
 def _build_component(name: str, config: dict[str, Any]) -> Any:
     cache_key = (name, _config_cache_key(config))
     if cache_key not in _COMPONENT_CACHE:
         _COMPONENT_CACHE[cache_key] = COMPONENT_FACTORIES[name](config)
+
     return _COMPONENT_CACHE[cache_key]
 
 def _apply_step_overrides(component: Any, state: dict[str, Any]) -> Any:
-    """Return a per-call clone of `component` with step overrides merged into settings.
-
-    Reads `state["_step"]` (set by the orchestrator) and filters out reserved
-    keys (`name`, `component`). The remaining keys are passed to
-    `settings.with_overrides`, which only applies fields the Settings model
-    declares — unknown step keys (e.g. `template_name` for the prompt builder)
-    are left for handlers to read directly from `_step`.
-    """
     step_meta = state.get("_step") or {}
     overrides = {k: v for k, v in step_meta.items() if k not in {"name", "component"}}
     if not overrides:
         return component
+    
     settings = getattr(component, "settings", None)
     if not isinstance(settings, ComponentSettings):
         return component
+    
     new_settings = settings.with_overrides(overrides)
     if new_settings is settings:
         return component
+    
     clone = type(component).__new__(type(component))
     clone.__dict__.update(component.__dict__)
     clone.settings = new_settings
@@ -80,6 +76,8 @@ REGISTRY: dict[str, ComponentCallable] = {
     "markdown_loader": bind("markdown_loader", _ingest_with),
     "document_loader": bind("document_loader", _ingest_with),
     "directory_loader": bind("directory_loader", _ingest_with),
+    "code_loader": bind("code_loader", _ingest_with),
+    "repo_loader": bind("repo_loader", _ingest_with),
     "source_normalizer": bind("source_normalizer", _normalize_sources_with),
     "query_cleaner": bind("query_cleaner", _clean_query_with),
     "query_rewriter": bind("query_rewriter", _rewrite_query_with),
@@ -89,10 +87,12 @@ REGISTRY: dict[str, ComponentCallable] = {
     "hybrid_retriever": bind("hybrid_retriever", _hybrid_retrieve_with),
     "memory_retriever": bind("memory_retriever", _retrieve_with),
     "graph_retriever": bind("graph_retriever", _retrieve_with),
+    "graph_expander": bind("graph_expander", _graph_expand_with),
     "external_retriever": bind("external_retriever", _retrieve_with),
     "late_chunker": bind("late_chunker", _chunk_with),
     "semantic_chunker": bind("semantic_chunker", _chunk_with),
     "recursive_chunker": bind("recursive_chunker", _chunk_with),
+    "code_aware_chunker": bind("code_aware_chunker", _chunk_with),
     "embedding_ranker": bind("embedding_ranker", _rank_with),
     "colbert_ranker": bind("colbert_ranker", _rank_with),
     "cross_encoder_ranker": bind("cross_encoder_ranker", _rank_with),
@@ -114,6 +114,7 @@ REGISTRY: dict[str, ComponentCallable] = {
     "llm_generator": bind("generator", _generate_with),
     "hybrid_merger": bind("context_merger", _context_merge_with),
     "embedding_indexer": bind("embedding_indexer", _index_with),
+    "repo_graph_indexer": bind("repo_graph_indexer", _index_with),
     "coarse_indexer": bind("coarse_indexer", _index_with),
 }
 

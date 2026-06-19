@@ -62,11 +62,28 @@ def _chunk_with(chunker: Any, state: dict[str, Any], config: dict[str, Any]) -> 
 
     for source_index, (text, metadata) in enumerate(chunk_inputs):
         source_chunks = chunker.chunk(text)
+
         for chunk_index, chunk in enumerate(source_chunks):
-            if hasattr(chunk, "metadata") and isinstance(chunk.metadata, dict):
-                chunk.metadata.update(metadata)
-                chunk.metadata.setdefault("source_index", source_index)
-                chunk.metadata.setdefault("chunk_index", chunk_index)
+            if not hasattr(chunk, "metadata") or not isinstance(chunk.metadata, dict):
+                continue
+
+            chunk.metadata.update(metadata)
+            chunk.metadata.setdefault("source_index", source_index)
+            chunk.metadata.setdefault("chunk_index", chunk_index)
+
+            source_key = str(
+                chunk.metadata.get("relative_path")
+                or chunk.metadata.get("path")
+                or chunk.metadata.get("source")
+                or chunk.metadata.get("doc_id")
+                or chunk.metadata.get("title")
+                or source_index
+            )
+
+            chunk.metadata["chunk_id"] = (
+                f"chunk:{text_hash(f'{source_key}:{chunk_index}:{chunk.text}')[:16]}"
+            )
+
         chunks.extend(source_chunks)
 
     payload["chunks"] = chunks
@@ -287,6 +304,8 @@ def _generate_with(generator: Any, state: dict[str, Any], config: dict[str, Any]
             chunk.text if isinstance(chunk, RetrievedChunk) else chunk["content"]
             for chunk in payload["ranked"]
         )
+        
+    payload["context"] = context
     inputs = {
         "query": payload.get("query", ""),
         "context": context
@@ -334,6 +353,30 @@ def _generate_with(generator: Any, state: dict[str, Any], config: dict[str, Any]
             ttl_sec=_cache_ttl(config, "generation", fallback=3600),
         )
 
+    return payload
+
+def _graph_expand_with(expander: Any, state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    payload = _ensure_state(state)
+    step_cfg = payload.get("_step", {}) if isinstance(payload.get("_step"), dict) else {}
+    retrieval_cfg = config.get("retrieval", {})
+
+    retrieved = list(payload.get("retrieved", []) or [])
+    max_expanded = int(
+        step_cfg.get(
+            "max_expanded_chunks",
+            getattr(expander.settings, "max_expanded_chunks", 20),
+        )
+    )
+
+    expanded = expander.expand(retrieved, top_k=max_expanded)
+
+    top_k = int(step_cfg.get("top_k", payload.get("top_k", retrieval_cfg.get("top_k", 5))))
+    merged_cap = max(top_k, len(retrieved) + len(expanded))
+
+    payload["graph_expanded"] = expanded
+    payload["retrieved"] = _merge_retrieval_chunks(retrieved + expanded, top_k=merged_cap)
+    payload["graph_expander"] = expander.__class__.__name__
+    payload["config"] = config
     return payload
 
 def _context_build_with(builder: Any, state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -390,7 +433,27 @@ def _stream_generate_with(
     config: dict[str, Any],
 ) -> dict[str, Any]:
     payload = _ensure_state(state)
-    payload["stream"] = list(generator.stream(payload.get("query", ""), payload.get("context", "")))
+    prompt = payload.get("prompt")
+    if prompt is None:
+        raise ValueError(
+            "streaming_generator requires a prompt — add prompt_builder upstream."
+        )
+
+    context = payload.get("context", "")
+    if not context and payload.get("ranked"):
+        context = "\n\n".join(
+            chunk.text if isinstance(chunk, RetrievedChunk) else chunk["content"]
+            for chunk in payload["ranked"]
+        )
+    inputs = {"query": payload.get("query", ""), "context": context}
+
+    pieces: list[str] = []
+    for piece in generator.stream(prompt, inputs):
+        pieces.append(piece)
+
+    payload["stream"] = pieces
+    payload["answer"] = "".join(pieces)
+    payload["generator"] = generator.__class__.__name__
     payload["config"] = config
     return payload
 

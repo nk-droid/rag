@@ -9,6 +9,7 @@ from components.chunking import (
     SemanticChunker,
     SemanticChunkerSettings,
 )
+from components.chunking.code_aware_chunker import CodeAwareChunker, CodeAwareChunkerSettings
 from components.context import (
     ContextBuilder,
     ContextBuilderSettings,
@@ -39,6 +40,7 @@ from components.indexer import (
     EmbeddingIndexer,
     EmbeddingIndexerSettings,
 )
+from components.indexer.repo_graph_indexer import RepoGraphIndexer, RepoGraphIndexerSettings
 from components.ingestion import (
     DirectoryLoader,
     DirectoryLoaderSettings,
@@ -51,6 +53,8 @@ from components.ingestion import (
     TextLoader,
     TextLoaderSettings,
 )
+from components.ingestion.code_loader import CodeLoader, CodeLoaderSettings
+from components.ingestion.repo_loader import RepoLoader, RepoLoaderSettings
 from components.memory import (
     MemoryFilter,
     MemoryFilterSettings,
@@ -97,6 +101,7 @@ from components.retrieval import (
     MemoryRetriever,
     MemoryRetrieverSettings,
 )
+from components.retrieval.graph_expander import GraphExpander, GraphExpanderSettings
 from infra.llm.llm_factory import get_llm
 from infra.storage.vector_store_factory import get_vector_store
 from pipeline.factory_helpers import build_component
@@ -131,6 +136,14 @@ def _generator(config: dict[str, Any]) -> Generator:
     return build_component(
         Generator,
         GeneratorSettings,
+        config,
+        deps_builder=lambda settings, cfg: {"llm": get_llm(cfg)},
+    )
+
+def _streaming_generator(config: dict[str, Any]) -> StreamingGenerator:
+    return build_component(
+        StreamingGenerator,
+        StreamingGeneratorSettings,
         config,
         deps_builder=lambda settings, cfg: {"llm": get_llm(cfg)},
     )
@@ -177,6 +190,8 @@ COMPONENT_FACTORIES: dict[str, ComponentFactory] = {
         c,
         deps_builder=lambda s, cfg: {"loader": _document_loader(cfg)},
     ),
+    "code_loader": lambda c: build_component(CodeLoader, CodeLoaderSettings, c),
+    "repo_loader": lambda c: build_component(RepoLoader, RepoLoaderSettings, c),
     "source_normalizer": lambda c: build_component(SourceNormalizer, SourceNormalizerSettings, c),
 
     # chunking
@@ -192,6 +207,7 @@ COMPONENT_FACTORIES: dict[str, ComponentFactory] = {
             "parser": _output_parser(cfg),
         },
     ),
+    "code_aware_chunker": lambda c: build_component(CodeAwareChunker, CodeAwareChunkerSettings, c),
 
     # indexers
     "coarse_indexer": lambda c: build_component(CoarseIndexer, CoarseIndexerSettings, c),
@@ -206,6 +222,7 @@ COMPONENT_FACTORIES: dict[str, ComponentFactory] = {
             }),
         },
     ),
+    "repo_graph_indexer": lambda c: build_component(RepoGraphIndexer, RepoGraphIndexerSettings, c),
 
     # query
     "query_cleaner": lambda c: build_component(QueryCleaner, QueryCleanerSettings, c),
@@ -244,6 +261,7 @@ COMPONENT_FACTORIES: dict[str, ComponentFactory] = {
     ),
     "memory_retriever": lambda c: build_component(MemoryRetriever, MemoryRetrieverSettings, c),
     "graph_retriever": lambda c: build_component(GraphRetriever, GraphRetrieverSettings, c),
+    "graph_expander": lambda c: build_component(GraphExpander, GraphExpanderSettings, c),
     "external_retriever": lambda c: build_component(ExternalRetriever, ExternalRetrieverSettings, c),
 
     # ranking
@@ -254,7 +272,7 @@ COMPONENT_FACTORIES: dict[str, ComponentFactory] = {
 
     # generation
     "generator": _generator,
-    "streaming_generator": lambda c: build_component(StreamingGenerator, StreamingGeneratorSettings, c),
+    "streaming_generator": _streaming_generator,
     "prompt_builder": lambda c: _prompt_builder(c, _GENERATION_TEMPLATES),
     "output_parser": _output_parser,
 

@@ -1,0 +1,38 @@
+template: |
+  You are doing repository impact analysis.
+
+  Use only the provided context for exact file paths.
+
+  Context:
+  ```
+  {context}
+  ```
+
+  Query:
+  ```
+  {query}
+  ```
+
+  Rules:
+  - Do not invent file paths.
+  - Every required file change must use an exact path found in the context.
+  - If a likely file is not found in context, put it under "Likely additional files to inspect".
+  - For each exact file, include:
+    1. file path
+    2. symbol/function/class if present
+    3. why it is affected
+    4. required change
+    5. confidence: high/medium/low
+  - Separate retrieved evidence from inferred recommendations.
+  - The Retrieved evidence section must list only items whose [source: ...] header appears verbatim in the context. Quote the header as-is; do not infer or add entries here.
+
+  Output sections:
+  1. Retrieved evidence (files/symbols/lines present in the context — quote the [source: ...] headers)
+  2. Exact file-level changes
+  3. Likely additional files to inspect
+  4. Migration plan
+  5. Risks and validation steps
+
+variables:
+  context: null
+  query: null
