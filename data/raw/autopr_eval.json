@@ -1,0 +1,26 @@
+{
+  "question": [
+    "What ordered stages does the ISSUE_TO_PR workflow run execute?",
+    "Which file implements the Redis-backed webhook queue and what queue keys does it use?",
+    "What is the responsibility of the Coordinator and where does it live?",
+    "Which LangGraph agents are implemented in AutoPR and what does each do?",
+    "What QA checks does AutoPR run and which modules implement them?",
+    "Which PostgreSQL tables does the run store define?",
+    "Which LLM providers are configured in AutoPR?",
+    "How does AutoPR isolate webhook intake from processing work?",
+    "What does the policy engine evaluate and what does it block?",
+    "Which observability tools make up the local stack?"
+  ],
+  "ground_truth": [
+    "The ISSUE_TO_PR run executes the ordered stages triage, prepare, plan, code, qa, publish, pr_open, review, and merge.",
+    "infra/redis/webhook_queue.py implements the Redis-backed queue using the keys autopr:webhook:queue, autopr:webhook:processing, and autopr:webhook:dlq for pending, processing, and dead-letter jobs.",
+    "core/orchestrator/coordinator.py executes the workflow: it owns the run model, validates state transitions, executes registered pipeline steps, persists every stage result, handles QA retry loops, creates review requests, and records final run state.",
+    "AutoPR implements TriageAgent, PlanAgent, CodeAgent, QAAgent, PublishAgent, PRAgent, ReviewAgent, and MergeAgent, each a focused LangGraph agent for triage, planning, code generation, QA evaluation, publishing the branch, opening the PR, reviewing merge readiness, and merging.",
+    "AutoPR runs lint (infra/qa/lint_runner.py), tests (infra/qa/test_runner.py), coverage (infra/qa/coverage_runner.py), and security (infra/qa/security_runner.py) under infra/qa.",
+    "infra/storage/schema.py defines the tables runs, run_events, artifacts, review_requests, and dead_letter_jobs.",
+    "The configured providers in configs/llm_models.yaml are Ollama, Anthropic, Google, and OpenAI.",
+    "The worker dispatcher in apps/worker/main.py runs separately from the API service, so webhook intake stays isolated from LLM calls, repository operations, and QA execution.",
+    "core/policies/engine.py evaluates deterministic merge policy checks and blocks high-risk automerge, sensitive path changes, and non-green QA results according to configs/policies.yaml.",
+    "The observability stack is the OpenTelemetry Collector, Prometheus, Tempo, Loki, and Grafana."
+  ]
+}

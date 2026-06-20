@@ -1,0 +1,13 @@
+runtime:
+  mode: api
+
+logging:
+  rich:
+    enabled: false
+
+models:
+  llm:
+    temperature: 0
+
+cache:
+  allow_nondeterministic_generation: false

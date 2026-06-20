@@ -1,0 +1,19 @@
+experiment:
+  name: retrieval_sweep
+  dataset: data/raw/eval_set.json
+  sources: data/raw/docs-short
+  runtime: eval
+  env: dev
+  parallelism: 6
+  metrics:
+    - recall_at_k
+    - context_precision_at_k
+    - faithfulness_lexical
+    - answer_relevancy_lexical
+    - latency_ms
+  variants:
+    - { name: simple_bm25, pipeline: simple }
+    - { name: advanced, pipeline: advanced }
+    - { name: custom, pipeline: custom }
+    - { name: debug, pipeline: debug }
+    - { name: external_fallback, pipeline: external_fallback }

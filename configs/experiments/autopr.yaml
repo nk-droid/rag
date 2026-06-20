@@ -1,0 +1,17 @@
+experiment:
+  name: autopr
+  dataset: data/raw/autopr_eval.json
+  sources: data/repos/autopr/working-tree
+  runtime: eval
+  env: dev
+  parallelism: 1
+  metrics:
+    - context_recall
+    - context_precision
+    - faithfulness
+    - answer_relevancy
+    - latency_ms
+  variants:
+    - { name: simple_bm25, pipeline: simple }
+    - { name: advanced, pipeline: advanced }
+    - { name: hybrid_graph, pipeline: repo_hybrid_graph }
