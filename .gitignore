@@ -208,3 +208,8 @@ __marimo__/
 data/indices
 data/intermediate
 data/processed
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
