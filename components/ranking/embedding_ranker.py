@@ -11,7 +11,7 @@ from infra.cache.cache_keys import text_hash
 class EmbeddingRankerSettings(BaseRankerSettings):
     _CONFIG_PATH = "ranking.embedding"
 
-    model_name: str = "qwen3-embedding:4b"
+    model_name: str = "qwen3-embedding:0.6b"
     top_n: int = 5
     use_cache: bool = True
     strategy: Literal["mmr", "cosine"] = "mmr"
