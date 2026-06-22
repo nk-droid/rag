@@ -38,18 +38,46 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest==9.0.3",
+    "pytest-cov==7.1.0",
+    "coverage==7.14.2",
 ]
 
 [project.scripts]
-rag = "cli:cli_main"
-rag-eval = "eval_cli:main"
-
-[tool.setuptools]
-py-modules = ["cli", "eval_cli"]
+rag = "clis.cli:cli_main"
+rag-eval = "clis.eval_cli:main"
 
 [tool.setuptools.packages.find]
-include = ["api*", "components*", "infra*", "pipeline*"]
+include = ["api*", "clis*", "components*", "infra*", "pipeline*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "unit: isolated tests for pure logic and local behavior",
+    "integration: cross-module tests using fakes/mocks for boundaries",
+    "e2e: end-to-end tests against an in-process pipeline run",
+]
+
+[tool.coverage.run]
+branch = false
+source = ["api", "clis", "components", "infra", "pipeline"]
+omit = [
+    "tests/*",
+    # Thin external-SDK wrappers / terminal UI glue — exercised manually, not unit-tested.
+    "infra/llm/providers/*",
+    "infra/llm/llm_factory.py",
+    "infra/embeddings/embedding_factory.py",
+    "infra/storage/vector_store_factory.py",
+    "infra/logging/runtime/rich_runtime.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@(abc\\.)?abstractmethod",
+]

@@ -50,8 +50,11 @@ ollama pull qwen3-embedding:4b
 
 Run the pipeline to confirm your environment is working:
 ```bash
-python cli.py --pipeline custom --runtime cli --env dev
+rag --pipeline custom --runtime cli --env dev
 ```
+
+(`pip install -e` registers the `rag` and `rag-eval` console scripts. Without an
+install you can run the equivalents with `python -m clis.cli` and `python -m clis.eval_cli`.)
 
 ---
 
@@ -66,7 +69,7 @@ Every component follows the same four-step registration pattern:
 4. Config      →   configs/pipeline/*.yaml
 ```
 
-When you run `python cli.py --pipeline custom`, the orchestrator reads the YAML, looks up each step name in `REGISTRY`, calls the bound factory to build the component, and passes it to the handler which reads/writes the shared pipeline `state` dict. Your component never touches config loading, caching, or orchestration - it just does its job.
+When you run `rag --pipeline custom`, the orchestrator reads the YAML, looks up each step name in `REGISTRY`, calls the bound factory to build the component, and passes it to the handler which reads/writes the shared pipeline `state` dict. Your component never touches config loading, caching, or orchestration - it just does its job.
 
 The registry also caches built components by config hash, so factories are called at most once per config:
 
@@ -212,7 +215,7 @@ pipeline:
 
 Run with:
 ```bash
-python cli.py --pipeline custom --runtime cli --env dev
+rag --pipeline custom --runtime cli --env dev
 ```
 
 ---
@@ -223,15 +226,15 @@ These are unimplemented components with a clear contract and well-defined scope.
 
 ---
 
-### 1. `GraphRetriever`
+### 1. `MemoryRetriever`
 
-**File:** `components/retrieval/graph_retriever.py`
+**File:** `components/retrieval/memory_retriever.py`
 
-Currently raises `NotImplementedError`. A reasonable starting scope:
+The registry key exists but the class is a stub. A reasonable starting scope:
 
-- At index time, build an adjacency graph from document metadata - connect chunks that share the same source file, heading, or sequential position
-- At query time, take seed chunks from dense retrieval and expand to their graph neighbours
-- Return the union of seed + expanded chunks, scored by proximity
+- Read from the conversational `MemoryStore` (`components/memory/`)
+- At query time, retrieve the most relevant prior turns/notes for the current query
+- Return them as `RetrievedChunk`s so they can be merged into context
 
 ---
 
@@ -249,7 +252,7 @@ Chunking that operates on full-document token embeddings before splitting, prese
 
 ## Code Style
 
-- **Python 3.11+.** Use `list[X]`, `dict[str, Any]`, `X | None` - not `List`, `Dict`, `Optional`.
+- **Python 3.12+.** Use `list[X]`, `dict[str, Any]`, `X | None` - not `List`, `Dict`, `Optional`.
 - **Type hints on all public methods.**
 - **No print statements.** Use `self.runtime.log(...)` or the structured logger in `infra/logging/`.
 - **Config reads in the factory, not the component.** Components receive typed values, not raw config dicts.
@@ -261,7 +264,7 @@ Chunking that operates on full-document token embeddings before splitting, prese
 
 1. Fork the repo and create a branch: `git checkout -b feat/graph-retriever`
 2. Make your changes
-3. Run the pipeline end-to-end to confirm nothing is broken: `python cli.py --pipeline custom --runtime cli --env dev`
+3. Run the pipeline end-to-end to confirm nothing is broken: `rag --pipeline custom --runtime cli --env dev`
 4. Open a PR with:
    - What the change does and why
    - Any config keys it reads and their defaults

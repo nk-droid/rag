@@ -6,7 +6,7 @@ one-line BM25 pipeline to a repo-aware Hybrid GraphRAG, and a separate evaluatio
 CLI runs multiple pipelines in parallel and compares them on metrics.
 
 ```bash
-python cli.py --pipeline custom --source data/raw/docs --query "How does indexing work?"
+rag --pipeline custom --source data/raw/docs --query "How does indexing work?"
 ```
 
 ---
@@ -68,7 +68,7 @@ refinement, conversational memory, and streaming generation.
 
 ## 3. Interface support matrix
 
-| Capability | CLI (`cli.py`) | Eval CLI (`eval_cli.py`) | HTTP API | Web UI (`frontend/`) |
+| Capability | CLI (`rag`) | Eval CLI (`rag-eval`) | HTTP API | Web UI (`frontend/`) |
 |------------|:---:|:---:|:---:|:---:|
 | Run a single pipeline | ✅ | — | ✅ `POST /api/pipelines/run` | ✅ |
 | Streaming generation | — | — | ✅ `POST /api/pipelines/stream` (SSE) | ✅ |
@@ -92,7 +92,7 @@ owns comparison; the API + React/MUI frontend offer interactive composition.
 
 ```
 ┌──────────── interfaces ─────────────────────────────────────────┐
-│  cli.py   eval_cli.py   api/ (FastAPI)   frontend/ (React+MUI)   │
+│  clis/ (rag · rag-eval)   api/ (FastAPI)   frontend/ (React+MUI)  │
 └───────────────┬─────────────────────────────────────────────────┘
                 │
         configs/  (base → pipeline → runtime → env, deep-merged)
@@ -143,7 +143,7 @@ config, or the embedding model triggers a full re-index automatically.
 
 ## 5. Setup
 
-**Requirements:** Python 3.11+ · Ollama (for the default config)
+**Requirements:** Python 3.12+ · Ollama (for the default config)
 
 ```bash
 git clone https://github.com/nk-droid/rag
@@ -153,6 +153,10 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 ```
+
+The editable install registers two console scripts — `rag` (run/validate pipelines)
+and `rag-eval` (experiments). Without installing, run them as `python -m clis.cli`
+and `python -m clis.eval_cli`.
 
 Pull the local default models (from `configs/base.yaml`):
 
@@ -210,13 +214,13 @@ Run a pipeline against a folder of documents:
 
 ```bash
 # See available RAG types
-python cli.py --list-pipelines
+rag --list-pipelines
 
 # Validate a config without running it (instant, no LLM)
-python cli.py --pipeline advanced --validate-only
+rag --pipeline advanced --validate-only
 
 # Run end to end
-python cli.py \
+rag \
   --pipeline simple \
   --source data/raw/docs \
   --query "What is the role of indexing in RAG before answer generation?" \
@@ -254,7 +258,7 @@ Index a Git repository and ask questions about its code. The CLI clones the repo
 code-aware chunker, and builds a code graph plus hybrid indexes.
 
 ```bash
-python cli.py \
+rag \
   --repo-url https://github.com/nk-droid/AutoPR \
   --branch main \
   --source-id autopr \
@@ -293,14 +297,14 @@ experiment:
 
 ```bash
 # Run all variants, store results, compute metrics, print the comparison table
-python eval_cli.py run --experiment configs/experiments/autopr.yaml
+rag-eval run --experiment configs/experiments/autopr.yaml
 
 # Recompute / add metrics from stored answers — no pipeline re-run
-python eval_cli.py metrics data/experiments/autopr/<timestamp> \
+rag-eval metrics data/experiments/autopr/<timestamp> \
   --metrics recall_at_k faithfulness_lexical
 
 # Reprint the comparison from stored metrics
-python eval_cli.py report data/experiments/autopr/<timestamp>
+rag-eval report data/experiments/autopr/<timestamp>
 ```
 
 Each run writes a timestamped directory under `data/experiments/<name>/<ts>/`:
@@ -470,10 +474,9 @@ rag/
 │   ├── uploads/           Uploaded sources from the API
 │   ├── workspaces/        Per-config FAISS + BM25 + graph artifacts
 │   └── experiments/       Stored experiment runs, metrics, comparisons
-├── cli.py
-├── eval_cli.py
+├── clis/                 CLI entry points: cli.py (`rag`), eval_cli.py (`rag-eval`)
 ├── CONTRIBUTING.md
-└── pyproject.toml
+└── pyproject.toml         Project metadata, pinned deps, console scripts, pytest config
 ```
 
 ---
@@ -529,7 +532,7 @@ rag/
 
 ## 16. Stack
 
-**Backend** — Python 3.11+, LangChain (`langchain-{ollama,openai,anthropic,community,
+**Backend** — Python 3.12+, LangChain (`langchain-{ollama,openai,anthropic,community,
 tavily,text-splitters}`), FAISS (`faiss-cpu`), `rank_bm25`, `sentence-transformers`,
 Pydantic, PyYAML, python-dotenv, Ragas + `datasets` (evaluation), Redis (optional
 cache), Rich (terminal runtime), pytest, FastAPI + Uvicorn, `python-multipart`.

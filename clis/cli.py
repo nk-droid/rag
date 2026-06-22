@@ -14,7 +14,7 @@ from pipeline.workspace import apply_workspace
 
 console = Console()
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parent.parent
 PIPELINE_DIR = REPO_ROOT / "configs" / "pipeline"
 
 def _config_path(*parts: str) -> str:
