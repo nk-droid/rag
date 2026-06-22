@@ -6,13 +6,13 @@ app:
 models:
   llm:
     provider: ollama   # openai | anthropic | huggingface | ollama
-    model_name: llama3.2:latest
+    model_name: gpt-oss:120b-cloud
     temperature: 0.2
     max_tokens: 1024
 
   embedding:
     provider: ollama
-    model_name: qwen3-embedding:4b
+    model_name: qwen3-embedding:0.6b
 
 vector_store:
   provider: faiss
@@ -24,6 +24,13 @@ retrieval:
     sparse_weight: 0.45
     dense_weight: 0.55
     fuse: true
+  graph:                       # shared by graph_retriever + graph_expander
+    path: data/indices/repo_graph.json
+    max_depth: 2
+    max_neighbors: 20
+    max_expanded_chunks: 20    # graph_expander only
+    score_decay: 0.85
+    min_score: 0.05            # graph_retriever only
   query_rewrite:
     template_name: rewrite_query.yaml
     parser_model: RewrittenQuery
@@ -40,6 +47,8 @@ indexers:
     path: data/indices/faiss_index
     vector_store:
       provider: faiss
+  graph:
+    path: data/indices/repo_graph.json
   coarse:
     path: data/indices/coarse_index.json
 
@@ -47,6 +56,10 @@ chunking:
   recursive:
     chunk_size: 512
     chunk_overlap: 50
+  code_aware:
+    chunk_size: 900
+    chunk_overlap: 80
+    include_import_chunk: true
   semantic:
     template_name: chunk.yaml
     parser_model: SemanticChunks
@@ -70,6 +83,8 @@ ranking:
   cross_encoder:
     model_name: cross-encoder/ms-marco-MiniLM-L-6-v2
     top_n: 3
+  colbert:
+    top_n: 5
 
 generation:
   prompt:
@@ -95,6 +110,18 @@ memory:
 ingestion:
   directory:
     recursive: true
+  code:
+    encoding: utf-8
+  repo_cloner:
+    root_dir: data/repos
+    default_branch: main
+    clone_depth: 1
+    max_repo_size_mb: 500
+  repo_file_filter:
+    max_file_size_kb: 512
+    max_files: 5000
+  repo:
+    enabled: true
 
 cache:
   enabled: true
@@ -113,6 +140,16 @@ cache:
     retrieval: 900
     generation: 3600
 
+intermediate:
+  enabled: false
+  path: data/intermediate
+  include_text: true
+  include_prompt: true
+  include_config: false
+  include_embeddings: false
+  max_text_chars: 4000
+  max_list_items: 200
+
 logging:
   level: INFO
   rich:
@@ -122,7 +159,8 @@ evaluation:
   sources: data/raw/docs
   samples_file: data/raw/eval_set.json
   ragas:
-    llm_model: llama3.2:latest
+    max_workers: 2
+    llm_model: gemma4:31b-cloud
     embedding_model: qwen3-embedding:4b
   evaluators:
     - type: ragas
