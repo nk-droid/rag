@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "modular-rag"
+version = "1.0.0"
+description = "A modular, repo/code-aware RAG platform with a pipeline engine, evaluation framework, API, and web UI."
+readme = "README.md"
+requires-python = ">=3.12"
+
+dependencies = [
+    "PyYAML==6.0.3",
+    "rich==13.9.4",
+    "langchain==1.2.14",
+    "langchain-text-splitters==1.1.1",
+    "langchain-community==0.4.1",
+    "langchain-anthropic==1.4.0",
+    "langchain-ollama==1.0.1",
+    "langchain-openai==1.1.12",
+    "langchain-pinecone==0.2.13",
+    "langchain-tavily==0.2.18",
+    "faiss-cpu==1.13.2",
+    "pinecone==7.3.0",
+    "rank-bm25==0.2.2",
+    "sentence-transformers==5.3.0",
+    "numpy==2.4.4",
+    "ragas==0.4.3",
+    "datasets==4.8.4",
+    "python-dotenv==1.2.2",
+    "redis==7.4.0",
+    "fastapi==0.136.1",
+    "uvicorn==0.46.0",
+    "python-multipart==0.0.26",
+    "pydantic==2.12.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.3",
+]
+
+[project.scripts]
+rag = "cli:cli_main"
+rag-eval = "eval_cli:main"
+
+[tool.setuptools]
+py-modules = ["cli", "eval_cli"]
+
+[tool.setuptools.packages.find]
+include = ["api*", "components*", "infra*", "pipeline*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
