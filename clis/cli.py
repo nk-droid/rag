@@ -209,7 +209,7 @@ def main(args) -> None:
     if state.get("intermediate_path"):
         console.print(f"\n[bold cyan]Intermediate[/bold cyan] {state['intermediate_path']}")
 
-if __name__ == "__main__":
+def cli_main() -> None:
     parser = ArgumentParser(description="Run modular RAG pipelines from CLI.")
 
     parser.add_argument(
@@ -309,3 +309,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     main(args)
+
+if __name__ == "__main__":
+    cli_main()
