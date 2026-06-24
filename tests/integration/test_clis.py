@@ -31,6 +31,7 @@ def _cli_args(**over):
         show_state=False,
         save_intermediate=False,
         run_id=None,
+        output=None,
     )
     base.update(over)
     return SimpleNamespace(**base)
@@ -64,6 +65,29 @@ def test_cli_run_with_local_source(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(rag_cli, "RAGOrchestrator", _FakeOrch)
     rag_cli.main(_cli_args(source=str(doc), query="q", skip_init=True))
     assert "the answer" in capsys.readouterr().out
+
+
+def test_cli_run_writes_output_file(tmp_path, monkeypatch):
+    doc = tmp_path / "doc.txt"
+    doc.write_text("hello world")
+    output = tmp_path / "nested" / "result.md"
+
+    class _FakeOrch:
+        def __init__(self, config):
+            self.config = config
+
+        def initialize(self, state):
+            return state
+
+        def run(self, state):
+            return {**state, "answer": "the answer", "retrieved": []}
+
+    monkeypatch.setattr(rag_cli, "RAGOrchestrator", _FakeOrch)
+    rag_cli.main(
+        _cli_args(source=str(doc), query="q", skip_init=True, output=str(output))
+    )
+
+    assert output.read_text(encoding="utf-8") == "the answer"
 
 
 def test_cli_run_repo_with_evidence(tmp_path, monkeypatch, capsys):

@@ -186,6 +186,12 @@ def main(args) -> None:
     console.print("\n[bold green]Answer[/bold green]")
     console.print(answer)
 
+    if args.output:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(answer, encoding="utf-8")
+        console.print(f"\n[bold cyan]Answer written to[/bold cyan] {output_path}")
+
     if args.show_state:
         console.print("\n[bold cyan]Final state[/bold cyan]")
         console.print(
@@ -305,6 +311,12 @@ def cli_main() -> None:
         type=str,
         default=None,
         help="Optional run ID/folder name for intermediate snapshots.",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Write the final answer/result to this file path.",
     )
 
     args = parser.parse_args()
