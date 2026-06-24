@@ -368,6 +368,7 @@ def _graph_expand_with(expander: Any, state: dict[str, Any], config: dict[str, A
         )
     )
 
+    payload["retrieved_before_graph_expand"] = retrieved
     expanded = expander.expand(retrieved, top_k=max_expanded)
 
     top_k = int(step_cfg.get("top_k", payload.get("top_k", retrieval_cfg.get("top_k", 5))))

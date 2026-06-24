@@ -130,6 +130,29 @@ def test_cli_run_repo_with_evidence(tmp_path, monkeypatch, capsys):
     assert "repo answer" in out and "a.py" in out
 
 
+def test_cli_evidence_summary_shows_graph_expanded_new_files_only(capsys):
+    rag_cli._print_evidence_summary(
+        {
+            "retrieved_before_graph_expand": [
+                RetrievedChunk(id="a1", text="t", metadata={"relative_path": "a.py"}),
+            ],
+            "retrieved": [
+                RetrievedChunk(id="a1", text="t", metadata={"relative_path": "a.py"}),
+                RetrievedChunk(id="b1", text="t", metadata={"relative_path": "b.py"}),
+            ],
+            "graph_expanded": [
+                RetrievedChunk(id="a2", text="t", metadata={"relative_path": "a.py"}),
+                RetrievedChunk(id="b1", text="t", metadata={"relative_path": "b.py"}),
+            ],
+        }
+    )
+
+    out = capsys.readouterr().out
+    graph_section = out.split("Top graph-expanded files", 1)[1]
+    assert "  - b.py" in graph_section
+    assert "  - a.py" not in graph_section
+
+
 def test_cli_helpers(monkeypatch):
     chunk = RetrievedChunk(id="x", text="t", metadata={"path": "p.py"})
     assert rag_cli._chunk_path(chunk) == "p.py"

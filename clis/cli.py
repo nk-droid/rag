@@ -122,8 +122,15 @@ def _unique_paths(chunks: list[Any], limit: int = 10) -> list[str]:
     return paths
 
 def _print_evidence_summary(state: dict[str, Any]) -> None:
-    retrieved = state.get("retrieved", []) or []
+    retrieved = state.get("retrieved_before_graph_expand")
+    if retrieved is None:
+        retrieved = state.get("retrieved", []) or []
     expanded = state.get("graph_expanded", []) or []
+    retrieved_paths = set(_unique_paths(retrieved, limit=10_000))
+    expanded_only = [
+        chunk for chunk in expanded
+        if _chunk_path(chunk) not in retrieved_paths
+    ]
 
     console.print("\n[bold cyan]Evidence summary[/bold cyan]")
     console.print(f"Retrieved chunks: {len(retrieved)}")
@@ -134,7 +141,7 @@ def _print_evidence_summary(state: dict[str, Any]) -> None:
         console.print(f"  - {path}")
 
     console.print("\n[bold]Top graph-expanded files[/bold]")
-    for path in _unique_paths(expanded):
+    for path in _unique_paths(expanded_only):
         console.print(f"  - {path}")
 
 def main(args) -> None:
